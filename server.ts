@@ -272,4 +272,82 @@ async function setupServer() {
   });
 }
 
+// 3. Generate Image via Gemini
+app.post("/api/generate-image", async (req, res) => {
+  const { prompt, style } = req.body;
+
+  if (!prompt || String(prompt).trim().length < 3) {
+    return res.status(400).json({ error: "Le prompt est trop court ou manquant." });
+  }
+
+  const fullPrompt = `Generate a funny African meme image. Style: ${style || "cartoon"}. Scene: ${prompt}. 
+  Make it vibrant, colorful, with African cultural references. High quality, meme format.`;
+
+  try {
+    const ai = getAi();
+    const response = await ai.models.generateContent({
+      model: "gemini-2.0-flash-preview-image-generation",
+      contents: fullPrompt,
+      config: {
+        responseModalities: ["TEXT", "IMAGE"],
+      },
+    });
+
+    // Chercher la partie image dans la réponse
+    const parts = response.candidates?.[0]?.content?.parts || [];
+    let imageBase64 = null;
+    let textDescription = "";
+
+    for (const part of parts) {
+      if (part.inlineData?.data) {
+        imageBase64 = part.inlineData.data;
+      }
+      if (part.text) {
+        textDescription = part.text;
+      }
+    }
+
+    if (!imageBase64) {
+      return res.status(500).json({ error: "Aucune image générée par l'IA." });
+    }
+
+    return res.json({
+      imageBase64: `data:image/png;base64,${imageBase64}`,
+      description: textDescription,
+      prompt: fullPrompt,
+    });
+
+  } catch (error: any) {
+    console.warn("Erreur génération image:", error.message);
+    return res.status(500).json({
+      error: "Génération d'image indisponible pour l'instant.",
+      details: error.message,
+    });
+  }
+});
+
+// 4. Share Links Generator
+app.post("/api/share-links", (req, res) => {
+  const { text, imageUrl } = req.body;
+
+  if (!text) {
+    return res.status(400).json({ error: "Le texte du meme est requis." });
+  }
+
+  const encodedText = encodeURIComponent(text);
+  const encodedUrl = encodeURIComponent(imageUrl || "https://memeafrica.app");
+
+  const shareLinks = {
+    whatsapp: `https://wa.me/?text=${encodedText}%20${encodedUrl}`,
+    telegram: `https://t.me/share/url?url=${encodedUrl}&text=${encodedText}`,
+    tiktok: `https://www.tiktok.com/upload`,   // TikTok = upload manuel
+    instagram: `https://www.instagram.com/`,    // Instagram = pas d'API de partage direct
+  };
+
+  return res.json({
+    shareLinks,
+    note: "TikTok et Instagram nécessitent un téléchargement manuel de l'image.",
+  });
+});
+
 setupServer();
