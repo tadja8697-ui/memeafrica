@@ -1,0 +1,150 @@
+@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=Hanken+Grotesk:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --color-inverse-primary: #3b6934;
+  --color-tertiary: #ffba20;
+  --color-surface-container: #1e201e;
+  --color-secondary-fixed: #ffdad3;
+  --color-on-primary: #0a3909;
+  --color-primary-fixed: #bcf0ae;
+  --color-primary-container: #2d5a27;
+  --color-surface-dim: #121412;
+  --color-on-primary-fixed-variant: #23501e;
+  --color-surface-variant: #333533;
+  --color-on-error: #690005;
+  --color-on-surface: #e2e3df;
+  --color-on-error-container: #ffdad6;
+  --color-on-tertiary: #412d00;
+  --color-tertiary-fixed: #ffdea8;
+  --color-on-secondary: #611205;
+  --color-secondary-container: #802918;
+  --color-surface: #121412;
+  --color-on-tertiary-fixed-variant: #5e4200;
+  --color-secondary: #ffb4a5;
+  --color-background: #121412;
+  --color-secondary-fixed-dim: #ffb4a5;
+  --color-on-tertiary-container: #fcb600;
+  --color-on-primary-fixed: #002201;
+  --color-primary: #a1d494;
+  --color-outline: #8c9387;
+  --color-surface-container-lowest: #0d0f0d;
+  --color-surface-container-low: #1a1c1a;
+  --color-surface-bright: #383a37;
+  --color-surface-container-high: #292a28;
+  --color-on-surface-variant: #c2c9bb;
+  --color-surface-container-highest: #333533;
+  --color-tertiary-container: #6a4a00;
+  --color-error: #ffb4ab;
+  --color-inverse-surface: #e2e3df;
+  --color-on-secondary-fixed: #3e0500;
+  --color-tertiary-fixed-dim: #ffba20;
+  --color-on-primary-container: #9dd090;
+  --color-error-container: #93000a;
+  --color-outline-variant: #42493e;
+  --color-on-background: #e2e3df;
+  --color-on-tertiary-fixed: #271900;
+  --color-surface-tint: #a1d494;
+  --color-inverse-on-surface: #2f312e;
+  --color-on-secondary-fixed-variant: #802918;
+  --color-primary-fixed-dim: #a1d494;
+
+  --font-sans: "Hanken Grotesk", sans-serif;
+  --font-syne: "Syne", sans-serif;
+  --font-mono: "JetBrains Mono", monospace;
+  
+  --animate-pulse-gold: pulse-gold 2s infinite;
+  --animate-shimmer: shimmer 3s infinite;
+  --animate-waveform: waveform 1.2s infinite ease-in-out;
+  --animate-drum-pulse: drum-pulse 2s infinite ease-in-out;
+}
+
+@keyframes pulse-gold {
+  0%, 100% { border-color: rgba(255, 186, 32, 0.3); }
+  50% { border-color: rgba(255, 186, 32, 0.8); }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+@keyframes waveform {
+  0%, 100% { height: 8px; }
+  50% { height: 48px; }
+}
+
+@keyframes drum-pulse {
+  0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(255, 186, 32, 0.4); }
+  50% { transform: scale(1.04); box-shadow: 0 0 40px 10px rgba(255, 186, 32, 0.2); }
+}
+
+body {
+  background-color: #121412;
+  color: #e2e3df;
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  min-height: 100vh;
+  margin: 0;
+}
+
+/* Custom Afro-Futurist Patterns & Glass Effects */
+.kente-pattern {
+  background-image: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M0 0h30v30H0V0zm30 30h30v30H30V30zM0 30h30v30H0V30zm30-30h30v30H30V0z' fill='%23a1d494' fill-opacity='0.03' fill-rule='evenodd'/%3E%3C/svg%3E");
+}
+
+.kente-mask {
+  mask-image: url("data:image/svg+xml,%3Csvg width='40' height='40' viewBox='0 0 40 40' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M0 0h20v20H0V0zm20 20h20v20H20V20zM0 20h20v20H0V20zm20-20h20v20H20V0z' fill='%23000' fill-opacity='1' fill-rule='evenodd'/%3E%3C/svg%3E");
+  opacity: 0.05;
+}
+
+.glass-card {
+  background: rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 186, 32, 0.1);
+}
+
+.glass-card-hover:hover {
+  border: 1px solid rgba(255, 186, 32, 0.35);
+  box-shadow: 0 0 25px rgba(255, 186, 32, 0.15);
+}
+
+.glass-shard {
+  background: rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 186, 32, 0.2);
+}
+
+.glass-panel {
+  background: rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+
+.glass-panel-heavy {
+  background: rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(40px);
+  -webkit-backdrop-filter: blur(40px);
+}
+
+.royal-gold-border {
+  border: 1px solid rgba(255, 186, 32, 0.28);
+}
+
+.gold-border {
+  border: 1px solid rgba(255, 186, 32, 0.23);
+}
+
+.wood-texture-overlay {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='400' viewBox='0 0 400 400'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.01 0.2' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='400' height='400' filter='url(%23n)' opacity='0.05'/%3E%3C/svg%3E");
+}
+
+/* Scrollbar Hide Utilities */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}

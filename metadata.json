@@ -1,0 +1,6 @@
+{
+  "name": "MemeAfrica",
+  "description": "An Afro-Futurist x Nature-Tech meme generator blending ancestral wit with high-performance AI, featuring Voice-to-Meme creation, real-time audio drum-beating transcripts and social chat slang analysis.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
