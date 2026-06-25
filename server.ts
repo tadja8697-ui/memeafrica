@@ -3,14 +3,19 @@ import path from "path";
 import dotenv from "dotenv";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
+import { corsMiddleware } from "./src/middlewares/cors";
+import { errorHandler } from "./src/middlewares/errorHandler";
+import { notFound } from "./src/middlewares/notFound";
 
 dotenv.config();
 
 const app = express();
 const PORT = 3000;
 
+// Middlewares
 app.use(express.json({ limit: "20mb" }));
 app.use(express.urlencoded({ extended: true, limit: "20mb" }));
+app.use(corsMiddleware);
 
 // Lazy initializer for Google Gen AI to prevent crash if key is undefined
 let aiClient: GoogleGenAI | null = null;
@@ -76,7 +81,40 @@ const SLANG_LIBRARY = [
   }
 ];
 
-// 1. Context / Tone Reader API
+// ========== ROUTES API ==========
+
+// 0. PAGE D'ACCUEIL - Nouvelle route ajoutée
+app.get("/", (req, res) => {
+  res.json({
+    name: "MemeAfrica API",
+    version: "1.0.0",
+    status: "🟢 Opérationnel",
+    description: "API de génération de memes avec intelligence artificielle",
+    routes: {
+      GET: [
+        { path: "/api/test", description: "Test du serveur" },
+        { path: "/api/health", description: "Vérification de l'état du serveur" }
+      ],
+      POST: [
+        { path: "/api/analyze-context", description: "Analyse de texte → génère des memes" },
+        { path: "/api/generate-meme", description: "Génère un meme à partir d'un prompt" }
+      ]
+    },
+    documentation: "Consultez le README pour plus d'informations"
+  });
+});
+
+// 1. Route de test simple
+app.get("/api/test", (req, res) => {
+  res.json({ success: true, message: "Backend fonctionnel ✅" });
+});
+
+// 2. Health check
+app.get("/api/health", (req, res) => {
+  res.json({ status: "ok", time: new Date().toISOString() });
+});
+
+// 3. Context / Tone Reader API
 app.post("/api/analyze-context", async (req, res) => {
   const { text } = req.body;
   if (!text || String(text).trim().length < 3) {
@@ -179,7 +217,7 @@ Make sure you only output standard JSON. No packaging blocks. Do not describe an
   }
 });
 
-// 2. Voice-to-Meme & Text Caption Generator API
+// 4. Voice-to-Meme & Text Caption Generator API
 app.post("/api/generate-meme", async (req, res) => {
   const { prompt } = req.body;
   if (!prompt || String(prompt).trim().length < 2) {
@@ -245,11 +283,15 @@ Output only JSON. Do not include markdown wraps.`;
   }
 });
 
+// ========== GESTION DES ERREURS ==========
 
-// Serve files FIRST
-app.get("/api/health", (req, res) => {
-  res.json({ status: "ok", time: new Date().toISOString() });
-});
+// 404 - Route non trouvée
+app.use(notFound);
+
+// Gestionnaire d'erreurs global
+app.use(errorHandler);
+
+// ========== SERVEUR ==========
 
 // Configure Vite middleware or static delivery
 async function setupServer() {
