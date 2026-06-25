@@ -29,7 +29,11 @@ import {
   X,
   Languages,
   MicOff,
-  AlertCircle
+  AlertCircle,
+  Image,
+  ExternalLink,
+  MessageCircle,
+  Send
 } from 'lucide-react';
 
 import { 
@@ -90,6 +94,13 @@ export default function App() {
   // App ratings / likes tracker
   const [likedMemeIds, setLikedMemeIds] = useState<Record<string, boolean>>({});
   const [customMemesList, setCustomMemesList] = useState<MemeItem[]>(BASE_MEMES);
+  // Share & Generate Image states (Membre 6)
+  const [generatePrompt, setGeneratePrompt] = useState<string>("");
+  const [generatedImage, setGeneratedImage] = useState<string | null>(null);
+  const [isGeneratingImage, setIsGeneratingImage] = useState<boolean>(false);
+  const [generateError, setGenerateError] = useState<string | null>(null);
+  const [shareLinks, setShareLinks] = useState<Record<string, string> | null>(null);
+  const [shareMemeText, setShareMemeText] = useState<string>("");
 
   // Load preset sample text into Context Reader
   const presets = [
@@ -420,6 +431,50 @@ export default function App() {
     playDjembeSound(480, 'sine');
     alert(`🎉 MemeAfrica Studio: "${captionTop} ${captionBottom}" compiled successfully at 1080p resolution! Stored in local downloads container.`);
   };
+  // Génération d'image via Gemini
+  const handleGenerateImage = async () => {
+  if (!generatePrompt.trim()) return;
+  setIsGeneratingImage(true);
+  setGenerateError(null);
+  setGeneratedImage(null);
+  try {
+    const res = await fetch("/api/generate-image", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt: generatePrompt, style: "cartoon african" }),
+    });
+    const data = await res.json();
+    if (data.imageBase64) {
+      setGeneratedImage(data.imageBase64);
+      playDjembeSound(440, 'sine');
+    } else {
+      setGenerateError(data.error || "Erreur inconnue");
+    }
+  } catch (err) {
+    setGenerateError("Impossible de contacter le serveur.");
+  } finally {
+    setIsGeneratingImage(false);
+  }
+};
+// Génération des liens de partage
+const handleGetShareLinks = async () => {
+  if (!shareMemeText.trim()) return;
+  try {
+    const res = await fetch("/api/share-links", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ 
+        text: shareMemeText, 
+        imageUrl: generatedImage || "" 
+      }),
+    });
+    const data = await res.json();
+    setShareLinks(data.shareLinks);
+    playDjembeSound(330, 'triangle');
+  } catch (err) {
+    console.error("Erreur share links:", err);
+  }
+};
 
   return (
     <div id="memeafrica-app" className="kente-pattern min-h-screen text-on-surface select-none relative pb-28 md:pb-20 overflow-x-hidden">
@@ -803,7 +858,131 @@ export default function App() {
 
                   </motion.div>
                 )}
-              </AnimatePresence>
+                {/* ===== SHARE & GENERATE TAB ===== */}
+                {activeTab === ('share' as any) && (
+                  <motion.div
+                  key="share"
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -20 }}
+                  className="p-4 space-y-6 pb-24">
+                    {/* Header */}
+                    <div className="space-y-1">
+                      <h2 className="font-mono font-bold text-lg text-on-surface">🌍 Share & Generate</h2>
+                      <p className="text-xs text-on-surface-variant font-mono">Génère un meme IA et partage-le sur tes réseaux</p>
+                      </div>
+                      
+                      {/* === SECTION 1 : Génération d'image IA === */}
+                      <div className="glass-card p-4 rounded-xl border border-white/5 space-y-4">
+                      <span className="font-mono text-xs text-tertiary font-bold uppercase block">🎨 Générateur d'Image IA</span>
+                      <div className="space-y-2">
+                        <label className="text-xs text-on-surface-variant font-mono block">Décris ton meme</label>
+                        <textarea
+                        value={generatePrompt}
+                        onChange={(e) => setGeneratePrompt(e.target.value)}
+                        placeholder="Ex: Un homme en boubou qui court après un matatu à Lagos..."
+                        className="w-full bg-black/40 border border-white/10 rounded-lg p-3 text-sm focus:outline-none resize-none h-24 font-mono"/>
+                        </div>
+                        <button
+                        onClick={handleGenerateImage}
+                        disabled={isGeneratingImage || !generatePrompt.trim()}
+                        className="w-full py-3 bg-primary/20 hover:bg-primary/30 disabled:opacity-40 border border-primary/30 rounded-xl font-mono text-sm font-bold text-primary transition-all flex items-center justify-center gap-2">
+                          {isGeneratingImage ? (
+                            <>
+                            <RefreshCw className="w-4 h-4 animate-spin" />
+                            Génération en cours...
+                            </>
+                            ) : (
+                            <>
+                            <Image className="w-4 h-4" />
+                            Générer l'image
+                            </>
+                          )}
+                          </button>
+                          {generateError && (
+                            <div className="flex items-center gap-2 text-xs text-error font-mono bg-error/10 p-3 rounded-lg">
+                              <AlertCircle className="w-4 h-4 shrink-0" />
+                              {generateError}
+                              </div>
+                            )}
+                            {generatedImage && (
+                              <motion.div
+                              initial={{ opacity: 0, scale: 0.95 }}
+                              animate={{ opacity: 1, scale: 1 }}
+                              className="space-y-3">
+                                <img src={generatedImage ?? undefined} alt="Meme généré" className="w-full rounded-xl border border-white/10"/>
+                                href={generatedImage} download="memeafrica-generated.png"
+                                className="w-full py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl font-mono text-xs font-bold text-on-surface transition-all flex items-center justify-center gap-2"
+                                <Download className="w-4 h-4" /> Télécharger l'image </motion.div>
+                              )}
+                              </div>
+                              
+                              {/* === SECTION 2 : Partage sur les réseaux === */}
+                              <div className="glass-card p-4 rounded-xl border border-white/5 space-y-4">
+                              <span className="font-mono text-xs text-tertiary font-bold uppercase block">📤 Partager sur les réseaux</span>
+                              <div className="space-y-2">
+                                <label className="text-xs text-on-surface-variant font-mono block">Texte du meme à partager</label>
+                                <textarea value={shareMemeText} onChange={(e) => setShareMemeText(e.target.value)}
+                                placeholder="Ex: POV: QUAND L'OGA DIT SOUMETS AVANT 9H MAIS LE SERVEUR DORT 😂 #MemeAfrica"
+                                className="w-full bg-black/40 border border-white/10 rounded-lg p-3 text-sm focus:outline-none resize-none h-20 font-mono"/>
+                              </div>
+                              
+                              <button onClick={handleGetShareLinks} disabled={!shareMemeText.trim()}
+                              className="w-full py-3 bg-tertiary/20 hover:bg-tertiary/30 disabled:opacity-40 border border-tertiary/30 rounded-xl font-mono text-sm font-bold text-tertiary transition-all flex items-center justify-center gap-2">
+                                <Share2 className="w-4 h-4" />
+                                Générer les liens de partage
+                                </button>
+                                {shareLinks && (
+                                  <motion.div
+                                  initial={{ opacity: 0, y: 10 }}
+                                  animate={{ opacity: 1, y: 0 }}
+                                  className="space-y-2">
+                                    
+                                    {/* WhatsApp */}
+                                    href={shareLinks?.whatsapp}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="flex items-center gap-3 p-3 bg-green-500/10 hover:bg-green-500/20 border border-green-500/20 rounded-xl transition-all"
+                                    <span className="text-xl">📱</span>
+                                    <span className="font-mono text-sm font-bold text-green-400 flex-1">WhatsApp</span>
+                                    <ExternalLink className="w-4 h-4 text-green-400" />
+                                    
+                                    {/* Telegram */}
+                                    href={shareLinks?.telegram}
+                                    target="_blank"
+                                    rel="noopener noreferrer" className="flex items-center gap-3 p-3 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/20 rounded-xl transition-all"
+                                    <Send className="w-5 h-5 text-blue-400" />
+                                    <span className="font-mono text-sm font-bold text-blue-400 flex-1">Telegram</span>
+                                    <ExternalLink className="w-4 h-4 text-blue-400" />
+                                    
+                                    {/* TikTok */}
+                                    href={shareLinks?.tiktok}
+                                    target="_blank" rel="noopener noreferrer"
+                                    className="flex items-center gap-3 p-3 bg-pink-500/10 hover:bg-pink-500/20 border border-pink-500/20 rounded-xl transition-all"
+                                    <span className="text-xl">🎵</span>
+                                    <div className="flex-1">
+                                      <span className="font-mono text-sm font-bold text-pink-400 block">TikTok</span>
+                                      <span className="font-mono text-[10px] text-pink-300/60">Télécharge l'image puis uploade</span>
+                                      </div>
+                                      <ExternalLink className="w-4 h-4 text-pink-400" />
+                                      
+                                      {/* Instagram */}
+                                      href={shareLinks?.instagram}
+                                      target="_blank" rel="noopener noreferrer"
+                                      className="flex items-center gap-3 p-3 bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/20 rounded-xl transition-all"
+                                      <span className="text-xl">📸</span>
+                                      <div className="flex-1">
+                                        <span className="font-mono text-sm font-bold text-purple-400 block">Instagram</span>
+                                        <span className="font-mono text-[10px] text-purple-300/60">Télécharge l'image puis poste</span>
+                                        </div>
+                                        <ExternalLink className="w-4 h-4 text-purple-400" />
+                                        </motion.div>
+                                      )}
+                                      </div>
+                                      
+                                      </motion.div>
+                                    )}
+                                    </AnimatePresence>
 
               {analysisError && (
                 <div className="p-4 bg-error-container/20 border border-error/30 text-error rounded-xl flex items-center gap-3">
@@ -1255,6 +1434,168 @@ export default function App() {
             </motion.div>
           )}
 
+          {/* ===== SHARE & GENERATE TAB ===== */}
+          {activeTab === ('share' as any) && (
+            <motion.div
+              key="share"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              className="p-4 space-y-6 pb-24"
+            >
+              {/* Header */}
+              <div className="space-y-1 pt-2">
+                <h2 className="font-mono font-bold text-lg text-on-surface">🌍 Share & Generate</h2>
+                <p className="text-xs text-on-surface-variant font-mono">Génère un meme IA et partage-le sur tes réseaux</p>
+              </div>
+
+              {/* SECTION 1 : Génération d'image IA */}
+              <div className="glass-card p-4 rounded-xl border border-white/5 space-y-4">
+                <span className="font-mono text-xs text-tertiary font-bold uppercase block">🎨 Générateur d'Image IA</span>
+
+                <div className="space-y-2">
+                  <label className="text-xs text-on-surface-variant font-mono block">Décris ton meme</label>
+                  <textarea
+                    value={generatePrompt}
+                    onChange={(e) => setGeneratePrompt(e.target.value)}
+                    placeholder="Ex: Un homme en boubou qui court après un matatu à Lagos..."
+                    className="w-full bg-black/40 border border-white/10 rounded-lg p-3 text-sm focus:outline-none resize-none h-24 font-mono"
+                  />
+                </div>
+
+                <button
+                  onClick={handleGenerateImage}
+                  disabled={isGeneratingImage || !generatePrompt.trim()}
+                  className="w-full py-3 bg-primary/20 hover:bg-primary/30 disabled:opacity-40 border border-primary/30 rounded-xl font-mono text-sm font-bold text-primary transition-all flex items-center justify-center gap-2"
+                >
+                  {isGeneratingImage ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      Génération en cours...
+                    </>
+                  ) : (
+                    <>
+                      <Image className="w-4 h-4" />
+                      Générer l'image
+                    </>
+                  )}
+                </button>
+
+                {generateError && (
+                  <div className="flex items-center gap-2 text-xs text-error font-mono bg-error/10 p-3 rounded-lg">
+                    <AlertCircle className="w-4 h-4 shrink-0" />
+                    {generateError}
+                  </div>
+                )}
+
+                {generatedImage && (
+                  <motion.div
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    className="space-y-3"
+                  >
+                    <img
+                      src={generatedImage ?? undefined}
+                      alt="Meme généré"
+                      className="w-full rounded-xl border border-white/10"
+                    />
+                    <a
+                      href={generatedImage ?? undefined}
+                      download="memeafrica-generated.png"
+                      className="w-full py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl font-mono text-xs font-bold text-on-surface transition-all flex items-center justify-center gap-2"
+                    >
+                      <Download className="w-4 h-4" />
+                      Télécharger l'image
+                    </a>
+                  </motion.div>
+                )}
+              </div>
+
+              {/* SECTION 2 : Partage sur les réseaux */}
+              <div className="glass-card p-4 rounded-xl border border-white/5 space-y-4">
+                <span className="font-mono text-xs text-tertiary font-bold uppercase block">📤 Partager sur les réseaux</span>
+
+                <div className="space-y-2">
+                  <label className="text-xs text-on-surface-variant font-mono block">Texte du meme à partager</label>
+                  <textarea
+                    value={shareMemeText}
+                    onChange={(e) => setShareMemeText(e.target.value)}
+                    placeholder="Ex: POV: QUAND L'OGA DIT SOUMETS AVANT 9H MAIS LE SERVEUR DORT 😂 #MemeAfrica"
+                    className="w-full bg-black/40 border border-white/10 rounded-lg p-3 text-sm focus:outline-none resize-none h-20 font-mono"
+                  />
+                </div>
+
+                <button
+                  onClick={handleGetShareLinks}
+                  disabled={!shareMemeText.trim()}
+                  className="w-full py-3 bg-tertiary/20 hover:bg-tertiary/30 disabled:opacity-40 border border-tertiary/30 rounded-xl font-mono text-sm font-bold text-tertiary transition-all flex items-center justify-center gap-2"
+                >
+                  <Share2 className="w-4 h-4" />
+                  Générer les liens de partage
+                </button>
+
+                {shareLinks && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="space-y-2"
+                  >
+                    <a
+                      href={shareLinks?.whatsapp}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-3 p-3 bg-green-500/10 hover:bg-green-500/20 border border-green-500/20 rounded-xl transition-all"
+                    >
+                      <span className="text-xl">📱</span>
+                      <span className="font-mono text-sm font-bold text-green-400 flex-1">WhatsApp</span>
+                      <ExternalLink className="w-4 h-4 text-green-400" />
+                    </a>
+
+                    <a
+                      href={shareLinks?.telegram}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-3 p-3 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/20 rounded-xl transition-all"
+                    >
+                      <Send className="w-5 h-5 text-blue-400" />
+                      <span className="font-mono text-sm font-bold text-blue-400 flex-1">Telegram</span>
+                      <ExternalLink className="w-4 h-4 text-blue-400" />
+                    </a>
+
+                    <a
+                      href={shareLinks?.tiktok}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-3 p-3 bg-pink-500/10 hover:bg-pink-500/20 border border-pink-500/20 rounded-xl transition-all"
+                    >
+                      <span className="text-xl">🎵</span>
+                      <div className="flex-1">
+                        <span className="font-mono text-sm font-bold text-pink-400 block">TikTok</span>
+                        <span className="font-mono text-[10px] text-pink-300/60">Télécharge l'image puis uploade</span>
+                      </div>
+                      <ExternalLink className="w-4 h-4 text-pink-400" />
+                    </a>
+
+                    <a
+                      href={shareLinks?.instagram}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-3 p-3 bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/20 rounded-xl transition-all"
+                    >
+                      <span className="text-xl">📸</span>
+                      <div className="flex-1">
+                        <span className="font-mono text-sm font-bold text-purple-400 block">Instagram</span>
+                        <span className="font-mono text-[10px] text-purple-300/60">Télécharge l'image puis poste</span>
+                      </div>
+                      <ExternalLink className="w-4 h-4 text-purple-400" />
+                    </a>
+                  </motion.div>
+                )}
+              </div>
+
+            </motion.div>
+          )}
+
         </AnimatePresence>
       </main>
 
@@ -1307,6 +1648,14 @@ export default function App() {
           <Sparkles className="w-5 h-5 mb-1" />
           <span className="font-mono text-[10px] uppercase tracking-wider">Studio</span>
         </button>
+        <button id="nav-tab-share" onClick={() => {
+          setActiveTab('share' as any);
+          playDjembeSound(280, 'triangle');
+        }}
+        className={`flex flex-col items-center justify-center transition-all ${activeTab === ('share' as any) ? 'text-tertiary font-bold scale-105' : 'text-on-surface-variant hover:text-tertiary'}`}>
+          <Share2 className="w-5 h-5 mb-1" />
+          <span className="font-mono text-[10px] uppercase tracking-wider">Share</span>
+          </button>
       </nav>
 
     </div>
