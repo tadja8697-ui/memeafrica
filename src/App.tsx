@@ -47,6 +47,8 @@ import {
   STICKERS, 
   OTHER_SUGGESTED_MEMES 
 } from './data/assets';
+import { adaptCulturally, enrichCaption, buildCulturalSystemPrompt } from './middleware/culturalAdapter';
+import CulturalBadge from './components/CulturalBadge';
 
 export default function App() {
   // Navigation State
@@ -79,6 +81,7 @@ export default function App() {
   // Context analyzer states
   const [pastedContextText, setPastedContextText] = useState<string>("");
   const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
+  const [culturalContext, setCulturalContext] = useState<any>(null);
   const [analysisResult, setAnalysisResult] = useState<AnalysisResponse | null>(null);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
 
@@ -236,6 +239,13 @@ export default function App() {
 
       const data: AnalysisResponse = await response.json();
       setAnalysisResult(data);
+      const cultural = adaptCulturally(pastedContextText);
+      setCulturalContext(cultural);
+      if (cultural.detected) {
+        const { top, bottom } = enrichCaption(data.summary || "", cultural);
+        setCaptionTop(top);
+        setCaptionBottom(bottom);
+      }
       playDjembeSound(350, 'sine');
     } catch (err: any) {
       setAnalysisError("Network slow down. Dynamic offline engine loaded standard backups.");
@@ -727,6 +737,10 @@ export default function App() {
                 </div>
               </div>
 
+              {culturalContext && (
+                <CulturalBadge context={culturalContext} />
+              )}
+
               {/* ANALYSIS RESULTS CARD */}
               <AnimatePresence>
                 {analysisResult && (
@@ -924,6 +938,9 @@ export default function App() {
               </div>
 
               <div className="text-center space-y-4 pt-4">
+                {culturalContext && culturalContext.detected && (
+                  <CulturalBadge context={culturalContext} compact={true} />
+                )}
                 <span className="font-mono text-xs text-on-surface-variant/70 block animate-pulse">
                   {isRecording ? "Transcribing on-the-fly rhythm..." : "Rhythms ready. Tap djembe to edit concept."}
                 </span>
