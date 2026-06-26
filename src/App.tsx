@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, ChangeEvent } from 'react';
 import { 
   motion, 
   AnimatePresence 
@@ -29,7 +29,8 @@ import {
   X,
   Languages,
   MicOff,
-  AlertCircle
+  AlertCircle,
+  FileImage
 } from 'lucide-react';
 
 import { 
@@ -39,7 +40,8 @@ import {
   TextOverlay, 
   AnalysisMemeSuggestion,
   AnalysisResponse,
-  GeneratorResponse
+  GeneratorResponse,
+  RemixerResponse 
 } from './types';
 
 import { 
@@ -90,6 +92,14 @@ export default function App() {
   // App ratings / likes tracker
   const [likedMemeIds, setLikedMemeIds] = useState<Record<string, boolean>>({});
   const [customMemesList, setCustomMemesList] = useState<MemeItem[]>(BASE_MEMES);
+
+  // ➔ ÉTATS COMPLÉMENTAIRES MODULE 5 : STATUS REMIXER
+  const [statusFile, setStatusFile] = useState<File | null>(null);
+  const [statusPreviewUrl, setStatusPreviewUrl] = useState<string | null>(null);
+  const [remixerMode, setRemixerMode] = useState<"caption" | "dance">("caption");
+  const [isRemixerLoading, setIsRemixerLoading] = useState<boolean>(false);
+  const [remixerResult, setRemixerResult] = useState<RemixerResponse | null>(null);
+  const [remixerError, setRemixerError] = useState<string | null>(null);
 
   // Load preset sample text into Context Reader
   const presets = [
@@ -145,7 +155,6 @@ export default function App() {
           setVoiceText(speechToText);
           setVoiceStatus(`Transcribed: "${speechToText}"`);
           playDjembeSound(440, 'sine');
-          // Automatically flow transcript to text captioneer config!
           setCaptionTop("POV: WHEN THEY SAID");
           setCaptionBottom(speechToText.toUpperCase());
         };
@@ -268,7 +277,6 @@ export default function App() {
       setCaptionBottom(data.captionLine2 || remixPromptText.toUpperCase());
       setStudioStatusMessage(`Ready: ${data.culturalExplanation || "Processed successfully!"}`);
       
-      // Select recommended backdrop if matched
       if (data.recommendedBaseImageId) {
         const matchingBackdrop = BASE_MEMES.find(b => b.id === data.recommendedBaseImageId);
         if (matchingBackdrop) {
@@ -277,7 +285,6 @@ export default function App() {
       }
       playDjembeSound(380, 'sine');
     } catch (error) {
-      // Fallback in-app calculations
       setCaptionTop("POV: WHEN YOU REMIX");
       setCaptionBottom(remixPromptText.toUpperCase());
       setStudioStatusMessage("Standard prompt applied offline.");
@@ -302,6 +309,53 @@ export default function App() {
     setPlacedStickers([...placedStickers, newPlaced]);
     setSelectedStickerId(newPlaced.id);
     playDjembeSound(300, 'sine');
+  };
+
+  // ➔ FONCTIONS COMPLÉMENTAIRES MODULE 5 : STATUS REMIXER
+  const handleStatusFileChange = (e: ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
+      setStatusFile(file);
+      setStatusPreviewUrl(URL.createObjectURL(file));
+      setRemixerResult(null);
+      setRemixerError(null);
+      playDjembeSound(200, "sine");
+    }
+  };
+
+  const submitStatusRemixer = async () => {
+    if (!statusFile) {
+      setRemixerError("Mon frère, sélectionne d'abord une image ou un GIF !");
+      return;
+    }
+
+    setIsRemixerLoading(true);
+    setRemixerError(null);
+    playDjembeSound(150, "sawtooth");
+
+    const formData = new FormData();
+    formData.append("image", statusFile);
+    formData.append("mode", remixerMode);
+
+    try {
+      const response = await fetch("/api/status-remixer", {
+        method: "POST",
+        body: formData,
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        setRemixerResult(data);
+        playDjembeSound(400, "sine");
+      } else {
+        setRemixerError(data.error || "Une erreur est survenue lors du remix.");
+      }
+    } catch (err) {
+      setRemixerError("Impossible de contacter le serveur backend.");
+    } finally {
+      setIsRemixerLoading(false);
+    }
   };
 
   // Sticker adjustments
@@ -346,7 +400,6 @@ export default function App() {
       const rect = canvasRef.current.getBoundingClientRect();
       const currentSticker = placedStickers.find(s => s.id === stickerId);
       if (currentSticker) {
-        // Find percentage offset
         const xPx = (currentSticker.x / 100) * rect.width;
         const yPx = (currentSticker.y / 100) * rect.height;
         setDragOffset({
@@ -364,7 +417,6 @@ export default function App() {
     const xPx = e.clientX - rect.left - dragOffset.x;
     const yPx = e.clientY - rect.top - dragOffset.y;
 
-    // Convert back to percentages
     const xPct = Math.max(0, Math.min(100, (xPx / rect.width) * 100));
     const yPct = Math.max(0, Math.min(100, (yPx / rect.height) * 100));
 
@@ -427,7 +479,6 @@ export default function App() {
       {/* HEADER SECTION */}
       <header className="flex justify-between items-center px-4 md:px-12 h-16 w-full fixed top-0 z-50 bg-surface/30 backdrop-blur-xl border-b border-tertiary/20">
         <div className="flex items-center gap-3">
-          {/* Main profile picture illustrating digital gold makeup */}
           <div className="w-10 h-10 rounded-full overflow-hidden border-2 border-primary shadow-lg shadow-primary/10">
             <img 
               referrerPolicy="no-referrer"
@@ -440,7 +491,6 @@ export default function App() {
         </div>
 
         <div className="flex items-center gap-3">
-          {/* Sound Synthesizer Mutone */}
           <button 
             id="synth-mute-toggle"
             onClick={() => setIsAudioMuted(!isAudioMuted)}
@@ -459,7 +509,7 @@ export default function App() {
         </div>
       </header>
 
-      {/* CORE CANVAS WORKSPACE MARGIN ADAPTING */}
+      {/* CORE CANVAS WORKSPACE */}
       <main className="pt-20 px-4 md:px-12 max-w-7xl mx-auto z-10 relative">
         <AnimatePresence mode="wait">
           
@@ -472,8 +522,6 @@ export default function App() {
               exit={{ opacity: 0, y: -15 }}
               className="space-y-8"
             >
-              
-              {/* Afro-Futurist Floating Mask Section */}
               <section className="relative mt-4 rounded-3xl overflow-hidden glass-card min-h-[360px] md:min-h-[460px] flex items-center royal-gold-border">
                 <div className="absolute inset-0 z-0">
                   <img 
@@ -506,14 +554,13 @@ export default function App() {
                 </div>
               </section>
 
-              {/* Connected Active Chips */}
               <div className="flex flex-wrap gap-3">
                 <div className="px-5 py-2.5 rounded-full glass-card flex items-center gap-2">
                   <span className="w-2.5 h-2.5 rounded-full bg-primary animate-pulse"></span>
                   <span className="font-mono text-xs text-on-surface-variant">1.2k Active Now</span>
                 </div>
                 <div className="px-5 py-2.5 rounded-full glass-card flex items-center gap-2 border-tertiary/20">
-                  <span className="material-symbols-outlined text-xs text-tertiary">🔥</span>
+                  <span className="text-xs text-tertiary">🔥</span>
                   <span className="font-mono text-xs text-tertiary font-bold uppercase">Trending: #SafariVibes</span>
                 </div>
               </div>
@@ -542,10 +589,8 @@ export default function App() {
                         src={meme.imageUrl}
                         referrerPolicy="no-referrer"
                       />
-                      {/* Gradient overlay */}
                       <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent z-10"></div>
                       
-                      {/* Interactive cards metadata */}
                       <div className="relative z-20 p-4 shrink-0 space-y-2">
                         <p className="font-syne text-sm font-bold text-on-surface drop-shadow-md">
                           {meme.title}
@@ -577,7 +622,6 @@ export default function App() {
                         </div>
                       </div>
 
-                      {/* Floating tag showing likes count */}
                       <div className="absolute top-3 left-3 z-20 px-2 py-1 bg-black/50 backdrop-blur-md rounded-lg flex items-center gap-1">
                         <Heart className="w-3 h-3 text-error fill-error" />
                         <span className="font-mono text-[10px] font-bold">{meme.likes}</span>
@@ -587,7 +631,7 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Dynamic Voice Prompt Section embedded in Feed */}
+              {/* Voice-to-Meme */}
               <section className="mt-8 glass-card rounded-3xl p-6 md:p-8 royal-gold-border overflow-hidden relative">
                 <div className="absolute -top-6 -right-6 opacity-5 pointer-events-none">
                   <Mic2 className="w-48 h-48 text-tertiary" />
@@ -651,7 +695,6 @@ export default function App() {
               exit={{ opacity: 0, scale: 0.98 }}
               className="space-y-8 mt-4"
             >
-              
               <div className="space-y-2">
                 <h1 className="font-syne text-2xl md:text-4xl font-extrabold text-on-surface">Context Reader</h1>
                 <p className="font-sans text-sm md:text-base text-on-surface-variant max-w-2xl leading-relaxed">
@@ -683,7 +726,6 @@ export default function App() {
                   )}
                 </div>
 
-                {/* Quick Presets Loader */}
                 <div className="space-y-2">
                   <span className="font-mono text-xs text-on-surface-variant block">Quick Presets:</span>
                   <div className="flex flex-col gap-2">
@@ -725,6 +767,118 @@ export default function App() {
                     )}
                   </button>
                 </div>
+              </div>
+
+              {/* ========================================================================= */}
+              {/* ➔ AJOUT MEMBRE 5 : INTERFACE COMPLETE DU INTERACTIVE STATUS REMIXER       */}
+              {/* ========================================================================= */}
+              <div id="status-remixer-section" className="glass-card rounded-2xl p-6 border border-primary/30 space-y-6 mt-6">
+                <div className="flex items-center gap-2 text-primary font-mono">
+                  <FileImage className="w-4 h-4 text-primary" />
+                  <span className="text-xs uppercase font-bold tracking-widest text-primary">STATUS REMIXER AI (IMAGE & GIF)</span>
+                </div>
+                
+                <p className="font-sans text-sm text-on-surface-variant leading-relaxed">
+                  Téléversez une capture d'écran de statut WhatsApp ou un GIF animé. Notre modèle de vision décodera l'image pour lui injecter un humour africain sur-mesure !
+                </p>
+
+                {/* Dropzone Container */}
+                <div className="border-2 border-dashed border-primary/40 rounded-xl p-8 text-center bg-surface-container-lowest hover:bg-white/5 transition-colors relative cursor-pointer">
+                  <input 
+                    type="file" 
+                    accept="image/*" 
+                    onChange={handleStatusFileChange} 
+                    className="absolute inset-0 opacity-0 cursor-pointer w-full h-full" 
+                    id="status-remix-upload"
+                  />
+                  <div className="flex flex-col items-center gap-2 pointer-events-none">
+                    <Download className="w-8 h-8 text-primary animate-pulse" />
+                    <span className="font-sans text-sm font-semibold text-on-surface">
+                      {statusFile ? `📂 Fichier prêt : ${statusFile.name}` : "Cliquez ou glissez une capture de statut (PNG, JPG, GIF)"}
+                    </span>
+                    <span className="font-mono text-[11px] text-on-surface-variant/50">Taille maximum : 15 Mo</span>
+                  </div>
+                </div>
+
+                {/* Mode Selector */}
+                {statusFile && (
+                  <div className="flex justify-center gap-6 py-2.5 bg-black/30 rounded-xl border border-white/5">
+                    <label className="flex items-center gap-2 font-mono text-xs cursor-pointer text-on-surface">
+                      <input 
+                        type="radio" 
+                        name="remixerMode" 
+                        value="caption" 
+                        checked={remixerMode === "caption"} 
+                        onChange={() => setRemixerMode("caption")} 
+                        className="accent-primary"
+                      />
+                      <span>Légende Humour (Vision)</span>
+                    </label>
+                    <label className="flex items-center gap-2 font-mono text-xs cursor-pointer text-on-surface">
+                      <input 
+                        type="radio" 
+                        name="remixerMode" 
+                        value="dance" 
+                        checked={remixerMode === "dance"} 
+                        onChange={() => setRemixerMode("dance")} 
+                        className="accent-primary"
+                      />
+                      <span>Effet Animé "Dance"</span>
+                    </label>
+                  </div>
+                )}
+
+                {/* Action Submit Button */}
+                {statusFile && (
+                  <button
+                    onClick={submitStatusRemixer}
+                    disabled={isRemixerLoading}
+                    className="w-full py-3.5 bg-primary text-black font-bold font-syne text-sm rounded-full flex items-center justify-center gap-2 shadow-lg shadow-primary/20 hover:brightness-110 active:scale-95 transition-all"
+                  >
+                    {isRemixerLoading ? (
+                      <>
+                        <RefreshCw className="w-4 h-4 animate-spin" />
+                        <span>Génération et traitement binaire de l'image...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="w-4 h-4" />
+                        <span>🔥 Générer et Exporter mon Mème Final</span>
+                      </>
+                    )}
+                  </button>
+                )}
+
+                {/* Local Error Feedback */}
+                {remixerError && (
+                  <div className="p-4 bg-error/10 border border-error/20 rounded-xl text-error text-xs font-mono flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4" />
+                    <span>⚠️ {remixerError}</span>
+                  </div>
+                )}
+
+                {/* Image Live Side-by-Side Comparator Rendering */}
+                {(statusPreviewUrl || remixerResult) && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+                    {statusPreviewUrl && (
+                      <div className="bg-white/5 p-3 rounded-xl border border-white/5 text-center space-y-2">
+                        <span className="font-mono text-[10px] text-on-surface-variant block uppercase tracking-wide">Capture d'origine</span>
+                        <img src={statusPreviewUrl} alt="Original" className="max-h-60 mx-auto rounded-lg object-contain border border-white/10" />
+                      </div>
+                    )}
+                    {remixerResult && (
+                      <div className="bg-primary/5 p-3 rounded-xl border border-primary/30 text-center space-y-2 relative animate-fade-in">
+                        <span className="font-mono text-[10px] text-primary block uppercase font-bold tracking-wide">Mème Final Traité 🚀</span>
+                        <img src={remixerResult.imageBase64} alt="Remix Result" className="max-h-60 mx-auto rounded-lg object-contain shadow-md shadow-black/60 border border-primary/20" />
+                        {remixerResult.description && (
+                          <div className="text-[11px] font-sans text-on-surface-variant text-left bg-black/40 p-2.5 rounded-md mt-2 border border-white/5 italic">
+                            🎯 <strong>Analyse :</strong> {remixerResult.description}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* ANALYSIS RESULTS CARD */}
@@ -850,7 +1004,7 @@ export default function App() {
             </motion.div>
           )}
 
-          {/* VOICE MODE TAB (LIVE TRANSCRIPT & DRUM PULSE) */}
+          {/* VOICE MODE TAB */}
           {activeTab === 'voice' && (
             <motion.div 
               key="voice-view"
@@ -867,7 +1021,6 @@ export default function App() {
                 </p>
               </div>
 
-              {/* Transcription Area Box */}
               <div className="w-full max-w-xl glass-shard rounded-2xl p-6 md:p-8 border border-tertiary/20 relative overflow-hidden">
                 <div className="absolute top-0 left-0 w-full h-1 bg-white/5">
                   <div 
@@ -889,9 +1042,7 @@ export default function App() {
                 </div>
               </div>
 
-              {/* GIGANTIC DRUM SOUND MIC BUTTON */}
               <div className="relative py-8 flex items-center justify-center">
-                {/* Glow concentric circles */}
                 <div className="absolute w-56 h-56 rounded-full border border-tertiary/10 animate-ping opacity-35"></div>
                 <div className="absolute w-72 h-72 rounded-full border border-tertiary/5 animate-pulse opacity-10"></div>
 
@@ -899,7 +1050,6 @@ export default function App() {
                   onClick={handleMicTap}
                   className={`relative w-40 h-40 rounded-full flex items-center justify-center border-4 border-tertiary bg-secondary-container shadow-2xl transition-all select-none cursor-pointer duration-300 ${isRecording ? 'scale-105 border-error' : 'hover:scale-102 active:scale-95'}`}
                 >
-                  {/* Mahogany Djembe Background Layer */}
                   <div 
                     className="absolute inset-0 rounded-full mix-blend-overlay opacity-30 bg-cover bg-center"
                     style={{ backgroundImage: "url('https://lh3.googleusercontent.com/aida-public/AB6AXuCK6I57MiYi2AVwOJjlrSXATGIVbeLrt0StGMfuSzc-aXd_-2o0qKDbDjaSWlJSfq97dmtRAeZk6FMTslaSY8YZ4BgvetT1r_K7bM_SYnqiINspj1VBeQmL-hKChol443sM5XqnZll0YZwj02iRY_8tn3gLFJtrfYjjf9r9yAZVNg4VQ8T_Kj-DV5sS4exQT2neDFWtnLdg1hewW6dm9kV1Leca0u-rhvX5Fp04xRrBS7_3NZh6PPBi129FxOWM_2yMTvEsaMZgcD-5')" }}
@@ -912,7 +1062,6 @@ export default function App() {
                 </button>
               </div>
 
-              {/* Rhythmic Waveform bar chart */}
               <div className="flex items-end justify-center gap-2 h-16 w-full max-w-xs">
                 {audioLevelArray.map((level, idx) => (
                   <div 
@@ -954,8 +1103,6 @@ export default function App() {
               exit={{ opacity: 0 }}
               className="grid grid-cols-1 lg:grid-cols-12 gap-8 mt-4 pb-20 items-start"
             >
-              
-              {/* Left Column: Canvas Editor Workspace */}
               <div className="lg:col-span-7 space-y-4">
                 <div className="flex justify-between items-center bg-white/5 p-3 rounded-xl border border-white/5">
                   <div className="flex items-center gap-2">
@@ -963,7 +1110,6 @@ export default function App() {
                     <span className="font-mono text-xs text-on-surface-variant">{studioStatusMessage}</span>
                   </div>
                   
-                  {/* Floating Export */}
                   <button 
                     onClick={simulateMemeExport}
                     className="px-5 py-2 bg-tertiary text-black font-mono text-xs font-bold uppercase rounded-full hover:brightness-110 transition-all flex items-center gap-1.5"
@@ -973,7 +1119,7 @@ export default function App() {
                   </button>
                 </div>
 
-                {/* THE CORE CANVAS INTERACTIVE ELEMENT */}
+                {/* CANVAS */}
                 <div 
                   ref={canvasRef}
                   onMouseMove={handleCanvasMouseMove}
@@ -981,7 +1127,6 @@ export default function App() {
                   onMouseLeave={handleCanvasMouseUp}
                   className="canvas-container relative w-full aspect-[4/5] glass-panel-heavy rounded-2xl gold-border overflow-hidden select-none"
                 >
-                  {/* Solid theme illustration backdrop */}
                   <img 
                     className="absolute inset-0 w-full h-full object-cover z-0 pointer-events-none" 
                     alt="Active Meme Backdrop"
@@ -989,11 +1134,10 @@ export default function App() {
                     referrerPolicy="no-referrer"
                   />
                   
-                  {/* Dynamic Dark Gradient shading for top and bottom text overlay legibility */}
                   <div className="absolute top-0 left-0 right-0 h-24 bg-gradient-to-b from-black/80 to-transparent pointer-events-none z-10" />
                   <div className="absolute bottom-0 left-0 right-0 h-28 bg-gradient-to-t from-black/85 to-transparent pointer-events-none z-10" />
 
-                  {/* CAPTION TOP TEXT */}
+                  {/* CAPTION TOP */}
                   {captionTop && (
                     <div className="absolute top-5 left-0 right-0 px-4 text-center z-20">
                       <h2 
@@ -1009,7 +1153,7 @@ export default function App() {
                     </div>
                   )}
 
-                  {/* CAPTION BOTTOM TEXT */}
+                  {/* CAPTION BOTTOM */}
                   {captionBottom && (
                     <div className="absolute bottom-6 left-0 right-0 px-4 text-center z-20">
                       <h2 
@@ -1025,7 +1169,7 @@ export default function App() {
                     </div>
                   )}
 
-                  {/* DRAGGABLE PLACED STICKERS OVERLAY CONTAINER */}
+                  {/* STICKERS OVERLAY */}
                   {placedStickers.map((sticker) => {
                     const isSelected = sticker.id === selectedStickerId;
                     return (
@@ -1065,7 +1209,6 @@ export default function App() {
                   })}
                 </div>
 
-                {/* Sub-text input for generating captions using Gemini */}
                 <div className="space-y-2">
                   <div className="relative">
                     <input 
@@ -1079,19 +1222,15 @@ export default function App() {
                       onClick={runRemixAiEngine} 
                       disabled={isRemixLoading || !remixPromptText.trim()}
                       className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 bg-primary/25 text-primary hover:bg-primary/40 rounded-lg transition-all"
-                      title="Generate captions using Gemini AI"
                     >
                       {isRemixLoading ? <RefreshCw className="w-4 h-4 animate-spin text-tertiary" /> : <Sparkles className="w-4 h-4 text-tertiary" />}
                     </button>
                   </div>
                 </div>
-
               </div>
 
-              {/* Right Column: Editing Drawers & Preset items */}
+              {/* Right Column */}
               <div className="lg:col-span-5 space-y-6">
-                
-                {/* Active selection controls */}
                 {selectedStickerId && (
                   <motion.div 
                     initial={{ opacity: 0, height: 0 }}
@@ -1100,172 +1239,90 @@ export default function App() {
                   >
                     <div className="flex justify-between items-center">
                       <span className="font-mono text-xs text-primary font-bold uppercase">Sticker Configurator</span>
-                      <button 
-                        onClick={() => setSelectedStickerId(null)}
-                        className="p-1 hover:bg-white/5 rounded text-on-surface-variant"
-                      >
+                      <button onClick={() => setSelectedStickerId(null)} className="p-1 hover:bg-white/5 rounded text-on-surface-variant">
                         <X className="w-4 h-4" />
                       </button>
                     </div>
 
                     <div className="flex flex-wrap gap-2 justify-between">
                       <div className="flex gap-2">
-                        <button 
-                          onClick={() => adjustSelectedSticker('scale-up')}
-                          className="p-2 bg-white/5 hover:bg-white/10 text-on-surface rounded text-xs px-3 font-mono"
-                          title="Scale Up"
-                        >
-                          ➕ Larger
-                        </button>
-                        <button 
-                          onClick={() => adjustSelectedSticker('scale-down')}
-                          className="p-2 bg-white/5 hover:bg-white/10 text-on-surface rounded text-xs px-3 font-mono"
-                          title="Scale Down"
-                        >
-                          ➖ Smaller
-                        </button>
+                        <button onClick={() => adjustSelectedSticker('scale-up')} className="p-2 bg-white/5 hover:bg-white/10 text-on-surface rounded text-xs px-3 font-mono">➕ Larger</button>
+                        <button onClick={() => adjustSelectedSticker('scale-down')} className="p-2 bg-white/5 hover:bg-white/10 text-on-surface rounded text-xs px-3 font-mono">– Smaller</button>
                       </div>
-
                       <div className="flex gap-2">
-                        <button 
-                          onClick={() => adjustSelectedSticker('rotate-cw')}
-                          className="p-2 bg-white/5 hover:bg-white/10 text-on-surface rounded text-xs px-3 font-mono"
-                          title="Rotate"
-                        >
-                          🔄 Rotate
-                        </button>
-                        <button 
-                          onClick={() => adjustSelectedSticker('delete')}
-                          className="p-2 bg-error/10 hover:bg-error/20 text-error rounded text-xs px-3 font-mono font-bold"
-                          title="Delete Sticker"
-                        >
-                          🗑️ Delete
-                        </button>
+                        <button onClick={() => adjustSelectedSticker('rotate-cw')} className="p-2 bg-white/5 hover:bg-white/10 text-on-surface rounded text-xs px-3 font-mono">🔄 Rotate</button>
+                        <button onClick={() => adjustSelectedSticker('delete')} className="p-2 bg-error/10 hover:bg-error/20 text-error rounded text-xs px-3 font-mono font-bold">🗑️ Delete</button>
                       </div>
                     </div>
                   </motion.div>
                 )}
 
-                {/* Text and Typography Editor Card */}
                 <div className="glass-card p-4 rounded-xl border border-white/5 space-y-4">
                   <span className="font-mono text-xs text-tertiary font-bold uppercase block">Captioneer Console</span>
-                  
                   <div className="space-y-2">
                     <label className="text-xs text-on-surface-variant font-mono block">Top Line Text</label>
-                    <input 
-                      type="text" 
-                      value={captionTop}
-                      onChange={(e) => setCaptionTop(e.target.value)}
-                      className="w-full bg-black/40 border border-white/10 rounded-lg p-2 text-sm focus:outline-none"
-                    />
+                    <input type="text" value={captionTop} onChange={(e) => setCaptionTop(e.target.value)} className="w-full bg-black/40 border border-white/10 rounded-lg p-2 text-sm focus:outline-none" />
                   </div>
-
                   <div className="space-y-2">
                     <label className="text-xs text-on-surface-variant font-mono block">Bottom Line Text</label>
-                    <input 
-                      type="text" 
-                      value={captionBottom}
-                      onChange={(e) => setCaptionBottom(e.target.value)}
-                      className="w-full bg-black/40 border border-white/10 rounded-lg p-2 text-sm focus:outline-none"
-                    />
+                    <input type="text" value={captionBottom} onChange={(e) => setCaptionBottom(e.target.value)} className="w-full bg-black/40 border border-white/10 rounded-lg p-2 text-sm focus:outline-none" />
                   </div>
 
-                  {/* Caption Controls: Size, Color */}
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-1">
                       <span className="text-[10px] text-on-surface-variant font-mono block">Top Color Accent</span>
                       <div className="flex gap-1.5">
                         {["#ffba20", "#a1d494", "#ffffff", "#ffb4a5", "#ff4444"].map((c) => (
-                          <button
-                            key={c}
-                            onClick={() => {
-                              setCaptionColor(c);
-                              playDjembeSound(200, 'sine');
-                            }}
-                            className="w-6 h-6 rounded-full border border-white/10 transition-transform active:scale-90"
-                            style={{ backgroundColor: c }}
-                          />
+                          <button key={c} onClick={() => { setCaptionColor(c); playDjembeSound(200, 'sine'); }} className="w-6 h-6 rounded-full border border-white/10" style={{ backgroundColor: c }} />
                         ))}
                       </div>
                     </div>
-
                     <div className="space-y-1">
                       <span className="text-[10px] text-on-surface-variant font-mono block">Font Size ({captionSize}px)</span>
                       <div className="flex items-center gap-2">
-                        <button 
-                          onClick={() => setCaptionSize(Math.max(16, captionSize - 2))}
-                          className="px-2 py-0.5 bg-white/5 select-none rounded text-xs font-mono font-bold"
-                        >
-                          -
-                        </button>
-                        <button 
-                          onClick={() => setCaptionSize(Math.min(52, captionSize + 2))}
-                          className="px-2 py-0.5 bg-white/5 select-none rounded text-xs font-mono font-bold"
-                        >
-                          +
-                        </button>
+                        <button onClick={() => setCaptionSize(Math.max(16, captionSize - 2))} className="px-2 py-0.5 bg-white/5 rounded text-xs font-mono font-bold">-</button>
+                        <button onClick={() => setCaptionSize(Math.min(52, captionSize + 2))} className="px-2 py-0.5 bg-white/5 rounded text-xs font-mono font-bold">+</button>
                       </div>
                     </div>
                   </div>
                 </div>
 
-                {/* Background selector tray */}
                 <div className="glass-card p-4 rounded-xl border border-white/5 space-y-3">
                   <span className="font-mono text-xs text-on-surface-variant font-bold uppercase block">Select Base Backdrop</span>
                   <div className="grid grid-cols-5 gap-2">
                     {BASE_MEMES.map((item) => (
-                      <button 
-                        key={item.id}
-                        onClick={() => {
-                          setCurrentBackdrop(item);
-                          playDjembeSound(220, 'sine');
-                        }}
-                        className={`aspect-[3/4] h-16 rounded-lg overflow-hidden border-2 ${currentBackdrop.id === item.id ? 'border-primary' : 'border-transparent opacity-60'}`}
-                      >
+                      <button key={item.id} onClick={() => { setCurrentBackdrop(item); playDjembeSound(220, 'sine'); }} className={`aspect-[3/4] h-16 rounded-lg overflow-hidden border-2 ${currentBackdrop.id === item.id ? 'border-primary' : 'border-transparent opacity-60'}`}>
                         <img className="w-full h-full object-cover" src={item.imageUrl} alt={item.title} referrerPolicy="no-referrer" />
                       </button>
                     ))}
                   </div>
                 </div>
 
-                {/* STICKER DRAWER / STICKERS GRID LISTINGS */}
                 <div className="glass-card p-4 rounded-xl border border-white/5 space-y-3">
                   <span className="font-mono text-xs text-tertiary font-bold uppercase block">Decorative Stickers Overlay</span>
-                  
                   <div className="grid grid-cols-3 gap-2 max-h-48 overflow-y-auto no-scrollbar pr-1">
                     {STICKERS.map((sticker) => (
-                      <button
-                        key={sticker.id}
-                        onClick={() => placeStickerOnCanvas(sticker)}
-                        className="p-1 px-2 py-2 bg-black/40 hover:bg-white/5 hover:border-primary/45 transition-all text-xs border border-white/10 rounded-lg flex flex-col items-center justify-center space-y-1 shrink-0"
-                      >
-                        <div className="w-10 h-10 overflow-hidden shrink-0">
+                      <button key={sticker.id} onClick={() => placeStickerOnCanvas(sticker)} className="p-1 px-2 py-2 bg-black/40 hover:bg-white/5 border border-white/10 rounded-lg flex flex-col items-center justify-center space-y-1">
+                        <div className="w-10 h-10 overflow-hidden">
                           <img className="w-full h-full object-contain" src={sticker.imageUrl} alt={sticker.name} referrerPolicy="no-referrer" />
                         </div>
-                        <span className="text-[9px] font-mono leading-none font-medium truncate w-full text-center text-on-surface-variant">
-                          {sticker.name.slice(0, 12)}
-                        </span>
+                        <span className="text-[9px] font-mono truncate w-full text-center text-on-surface-variant">{sticker.name.slice(0, 12)}</span>
                       </button>
                     ))}
                   </div>
                 </div>
-
               </div>
-
             </motion.div>
           )}
 
         </AnimatePresence>
-      </main>
+                  </main>
 
       {/* FIXED BOTTOM NAV BAR TAB SELECTION */}
       <nav className="fixed bottom-0 w-full h-20 z-50 flex justify-around items-center px-4 pb-2 bg-surface/20 backdrop-blur-md border-t border-tertiary/20">
         <button 
           id="nav-tab-feed"
-          onClick={() => {
-            setActiveTab('feed');
-            playDjembeSound(200, 'triangle');
-          }}
+          onClick={() => { setActiveTab('feed'); playDjembeSound(200, 'triangle'); }}
           className={`flex flex-col items-center justify-center transition-all ${activeTab === 'feed' ? 'text-tertiary font-bold scale-105' : 'text-on-surface-variant hover:text-tertiary'}`}
         >
           <Grid3x3 className="w-5 h-5 mb-1" />
@@ -1274,22 +1331,32 @@ export default function App() {
 
         <button 
           id="nav-tab-analyze"
-          onClick={() => {
-            setActiveTab('analyze');
-            playDjembeSound(220, 'triangle');
-          }}
+          onClick={() => { setActiveTab('analyze'); playDjembeSound(220, 'triangle'); }}
           className={`flex flex-col items-center justify-center transition-all ${activeTab === 'analyze' ? 'text-tertiary font-bold scale-105' : 'text-on-surface-variant hover:text-tertiary'}`}
         >
           <Brain className="w-5 h-5 mb-1" />
           <span className="font-mono text-[10px] uppercase tracking-wider">Analyze</span>
         </button>
 
+        {/* ➔ AJOUT NAVIGATION COMPLÉMENTAIRE MEMBRE 5 : STATUS REMIXER */}
+        <button 
+          id="nav-tab-status"
+          onClick={() => {
+            setActiveTab('analyze');
+            playDjembeSound(230, 'triangle');
+            setTimeout(() => {
+              document.getElementById('status-remixer-section')?.scrollIntoView({ behavior: 'smooth' });
+            }, 100);
+          }}
+          className="flex flex-col items-center justify-center transition-all text-on-surface-variant hover:text-primary"
+        >
+          <FileImage className="w-5 h-5 mb-1 text-primary animate-pulse" />
+          <span className="font-mono text-[10px] uppercase tracking-wider text-primary font-bold">Status AI</span>
+        </button>
+
         <button 
           id="nav-tab-voice"
-          onClick={() => {
-            setActiveTab('voice');
-            playDjembeSound(240, 'triangle');
-          }}
+          onClick={() => { setActiveTab('voice'); playDjembeSound(240, 'triangle'); }}
           className={`flex flex-col items-center justify-center transition-all ${activeTab === 'voice' ? 'text-tertiary font-bold scale-105' : 'text-on-surface-variant hover:text-tertiary'}`}
         >
           <Mic2 className="w-5 h-5 mb-1" />
@@ -1298,10 +1365,7 @@ export default function App() {
 
         <button 
           id="nav-tab-studio"
-          onClick={() => {
-            setActiveTab('studio');
-            playDjembeSound(260, 'triangle');
-          }}
+          onClick={() => { setActiveTab('studio'); playDjembeSound(260, 'triangle'); }}
           className={`flex flex-col items-center justify-center transition-all ${activeTab === 'studio' ? 'text-tertiary font-bold scale-105' : 'text-on-surface-variant hover:text-tertiary'}`}
         >
           <Sparkles className="w-5 h-5 mb-1" />
