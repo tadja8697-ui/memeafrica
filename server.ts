@@ -5,14 +5,19 @@ import fs from "fs";
 import multer from "multer";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
+import { corsMiddleware } from "./src/middlewares/cors";
+import { errorHandler } from "./src/middlewares/errorHandler";
+import { notFound } from "./src/middlewares/notFound";
 
 dotenv.config();
 
 const app = express();
 const PORT = 3000;
 
+// Middlewares
 app.use(express.json({ limit: "20mb" }));
 app.use(express.urlencoded({ extended: true, limit: "20mb" }));
+app.use(corsMiddleware);
 
 // Configure Multer for audio storage
 const uploadDir = path.join(process.cwd(), "uploads");
@@ -99,7 +104,21 @@ const SLANG_LIBRARY = [
   }
 ];
 
-// 1. Context / Tone Reader API
+// ========== ROUTES API ==========
+
+// 0. PAGE D'ACCUEIL - Nouvelle route ajoutée
+
+// 1. Route de test simple
+app.get("/api/test", (req, res) => {
+  res.json({ success: true, message: "Backend fonctionnel ✅" });
+});
+
+// 2. Health check
+app.get("/api/health", (req, res) => {
+  res.json({ status: "ok", time: new Date().toISOString() });
+});
+
+// 3. Context / Tone Reader API
 app.post("/api/analyze-context", async (req, res) => {
   const { text } = req.body;
   if (!text || String(text).trim().length < 3) {
@@ -202,7 +221,7 @@ Make sure you only output standard JSON. No packaging blocks. Do not describe an
   }
 });
 
-// 2. Voice-to-Meme & Text Caption Generator API
+// 4. Voice-to-Meme & Text Caption Generator API
 app.post("/api/generate-meme", async (req, res) => {
   const { prompt } = req.body;
   if (!prompt || String(prompt).trim().length < 2) {
@@ -267,6 +286,8 @@ Output only JSON. Do not include markdown wraps.`;
     });
   }
 });
+
+// ========== GESTION DES ERREURS ==========
 
 // 3. Voice-to-Meme API (Member 4)
 app.post("/api/voice-to-meme", upload.single("audio"), async (req, res) => {
@@ -343,10 +364,8 @@ Output only JSON.`;
   }
 });
 
-// Serve files FIRST
-app.get("/api/health", (req, res) => {
-  res.json({ status: "ok", time: new Date().toISOString() });
-});
+
+// ========== SERVEUR ==========
 
 // Configure Vite middleware or static delivery
 async function setupServer() {
