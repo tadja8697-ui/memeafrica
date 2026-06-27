@@ -489,10 +489,27 @@ export default function App() {
     playDjembeSound(400, 'sine');
   };
 
-  // Simulate exporting Meme
-  const simulateMemeExport = () => {
+  // Export du meme → capture canvas → onglet Share
+  const simulateMemeExport = async () => {
     playDjembeSound(480, 'sine');
-    alert(`🎉 MemeAfrica Studio: "${captionTop} ${captionBottom}" compiled successfully at 1080p resolution! Stored in local downloads container.`);
+    try {
+      const html2canvasModule = await import('html2canvas' as any);
+      const html2canvas = html2canvasModule.default || html2canvasModule;
+      if (canvasRef.current) {
+        const canvas = await html2canvas(canvasRef.current, { useCORS: true, allowTaint: true });
+        const imageDataUrl = canvas.toDataURL('image/png');
+        setGeneratedImage(imageDataUrl);
+        setShareMemeText(`${captionTop} ${captionBottom} #MemeAfrica`);
+        setActiveTab('share');
+        playDjembeSound(440, 'sine');
+      }
+    } catch {
+      // Fallback — rediriger vers Share avec le backdrop actuel
+      setGeneratedImage(currentBackdrop.imageUrl);
+      setShareMemeText(`${captionTop} ${captionBottom} #MemeAfrica`);
+      setActiveTab('share');
+      playDjembeSound(330, 'triangle');
+    }
   };
 
   return (
