@@ -5,9 +5,6 @@ import fs from "fs";
 import multer from "multer";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
-import { corsMiddleware } from "./src/middlewares/cors";
-import { errorHandler } from "./src/middlewares/errorHandler";
-import { notFound } from "./src/middlewares/notFound";
 
 dotenv.config();
 
@@ -17,7 +14,13 @@ const PORT = 3000;
 // Middlewares
 app.use(express.json({ limit: "20mb" }));
 app.use(express.urlencoded({ extended: true, limit: "20mb" }));
-app.use(corsMiddleware);
+app.use((req, res, next) => {
+  res.header("Access-Control-Allow-Origin", "*");
+  res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept");
+  res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+  if (req.method === "OPTIONS") return res.sendStatus(200);
+  next();
+});
 
 // Configure Multer for audio storage
 const uploadDir = path.join(process.cwd(), "uploads");
@@ -366,6 +369,60 @@ Output only JSON.`;
 
 
 // ========== SERVEUR ==========
+
+// Generate Image via Gemini (Membre 6)
+app.post("/api/generate-image", async (req, res) => {
+  const { prompt, style } = req.body;
+  if (!prompt || String(prompt).trim().length < 3) {
+    return res.status(400).json({ error: "Le prompt est trop court." });
+  }
+  const fallbackImages = [
+  "https://picsum.photos/seed/africa1/400/400",
+  "https://picsum.photos/seed/africa2/400/400",
+  "https://picsum.photos/seed/meme1/400/400",
+  "https://picsum.photos/seed/lagos/400/400",
+];
+  try {
+    const ai = getAi();
+    const fullPrompt = `Generate a funny African meme image. Style: ${style || "cartoon"}. Scene: ${prompt}. Make it vibrant, colorful, with African cultural references.`;
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash-image",
+      contents: fullPrompt,
+      config: { responseModalities: ["TEXT", "IMAGE"] },
+    });
+    const parts = response.candidates?.[0]?.content?.parts || [];
+    let imageBase64 = null;
+    let textDescription = "";
+    for (const part of parts) {
+      if ((part as any).inlineData?.data) imageBase64 = (part as any).inlineData.data;
+      if (part.text) textDescription = part.text;
+    }
+    if (!imageBase64) {
+      const randomImage = fallbackImages[Math.floor(Math.random() * fallbackImages.length)];
+      return res.json({ imageBase64: randomImage, description: `Meme pour: ${prompt}`, fallback: true });
+    }
+    return res.json({ imageBase64: `data:image/png;base64,${imageBase64}`, description: textDescription });
+  } catch (error: any) {
+    const randomImage = fallbackImages[Math.floor(Math.random() * fallbackImages.length)];
+    return res.json({ imageBase64: randomImage, description: `Meme africain pour: ${prompt}`, fallback: true });
+  }
+});
+
+// Share Links Generator (Membre 6)
+app.post("/api/share-links", (req, res) => {
+  const { text, imageUrl } = req.body;
+  if (!text) return res.status(400).json({ error: "Texte requis." });
+  const encodedText = encodeURIComponent(text);
+  const encodedUrl = encodeURIComponent(imageUrl || "https://memeafrica.app");
+  return res.json({
+    shareLinks: {
+      whatsapp: `https://wa.me/?text=${encodedText}%20${encodedUrl}`,
+      telegram: `https://t.me/share/url?url=${encodedUrl}&text=${encodedText}`,
+      tiktok: `https://www.tiktok.com/upload`,
+      instagram: `https://www.instagram.com/`,
+    }
+  });
+});
 
 // Configure Vite middleware or static delivery
 async function setupServer() {

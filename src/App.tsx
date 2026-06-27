@@ -180,47 +180,66 @@ export default function App() {
 
   // Browser WebSpeech API recognition
   const recognitionRef = useRef<any>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+
   const startSpeechRecognition = () => {
-    const SpeechClass = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (SpeechClass) {
-      try {
-        recognitionRef.current = new SpeechClass();
-        recognitionRef.current.continuous = false;
-        recognitionRef.current.interimResults = false;
-        recognitionRef.current.lang = 'en-US';
+    // Utiliser MediaRecorder pour enregistrer l'audio et l'envoyer au backend
+    navigator.mediaDevices.getUserMedia({ audio: true })
+      .then((stream) => {
+        audioChunksRef.current = [];
+        const mediaRecorder = new MediaRecorder(stream);
+        mediaRecorderRef.current = mediaRecorder;
 
-        recognitionRef.current.onstart = () => {
-          setVoiceStatus("Listening to your voice...");
-          playDjembeSound(260, 'sine');
+        setVoiceStatus("Enregistrement en cours... 🎙️");
+        playDjembeSound(260, 'sine');
+
+        mediaRecorder.ondataavailable = (e) => {
+          if (e.data.size > 0) audioChunksRef.current.push(e.data);
         };
 
-        recognitionRef.current.onresult = (e: any) => {
-          const speechToText = e.results[0][0].transcript;
-          setVoiceText(speechToText);
-          setVoiceStatus(`Transcribed: "${speechToText}"`);
-          playDjembeSound(440, 'sine');
-          // Automatically flow transcript to text captioneer config!
-          setCaptionTop("POV: WHEN THEY SAID");
-          setCaptionBottom(speechToText.toUpperCase());
-        };
+        mediaRecorder.onstop = async () => {
+          stream.getTracks().forEach(t => t.stop());
+          const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+          setVoiceStatus("Analyse IA en cours... 🤖");
 
-        recognitionRef.current.onerror = () => {
-          setVoiceStatus("Microphone blocked or quiet. Generative prompt applied instead!");
-          generateMockTranscript();
-        };
+          try {
+            const formData = new FormData();
+            formData.append('audio', audioBlob, 'voice.webm');
+            const res = await fetch('/api/voice-to-meme', { method: 'POST', body: formData });
+            const data = await res.json();
 
-        recognitionRef.current.onend = () => {
+            if (data.transcription) {
+              setVoiceText(data.transcription);
+              setVoiceStatus(`✅ "${data.transcription}"`);
+              setCaptionTop(data.captionLine1 || "POV: WHEN THEY SAID");
+              setCaptionBottom(data.captionLine2 || data.transcription.toUpperCase());
+              playDjembeSound(440, 'sine');
+            } else {
+              setVoiceStatus("Erreur IA. Essaie encore !");
+              generateMockTranscript();
+            }
+          } catch {
+            setVoiceStatus("Serveur indisponible. Mode offline activé.");
+            generateMockTranscript();
+          }
           setIsRecording(false);
           setRecordingProgress(0);
         };
 
-        recognitionRef.current.start();
-      } catch (err) {
+        mediaRecorder.start();
+
+        // Arrêt auto après 8 secondes
+        setTimeout(() => {
+          if (mediaRecorder.state === 'recording') {
+            mediaRecorder.stop();
+          }
+        }, 8000);
+      })
+      .catch(() => {
+        setVoiceStatus("Microphone bloqué. Mode offline activé.");
         generateMockTranscript();
-      }
-    } else {
-      generateMockTranscript();
-    }
+      });
   };
 
   const generateMockTranscript = () => {
@@ -258,13 +277,14 @@ export default function App() {
   }, [isRecording]);
 
   const handleMicTap = () => {
-    setIsRecording(!isRecording);
     if (!isRecording) {
+      setIsRecording(true);
       setVoiceText("");
       startSpeechRecognition();
     } else {
-      if (recognitionRef.current) {
-        recognitionRef.current.stop();
+      // Arrêter l'enregistrement manuellement
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+        mediaRecorderRef.current.stop();
       }
       setIsRecording(false);
     }
@@ -1263,6 +1283,62 @@ export default function App() {
                   </div>
                 </div>
 
+                {/* IMPORT IMAGE / STICKER depuis le téléphone */}
+                <div className="glass-card p-4 rounded-xl border border-white/5 space-y-3">
+                  <span className="font-mono text-xs text-tertiary font-bold uppercase block">📁 Importer une image / sticker</span>
+                  <p className="text-[10px] text-on-surface-variant font-mono">Importe une image depuis ton téléphone pour l'utiliser comme fond ou sticker</p>
+                  <div className="flex gap-2">
+                    <label className="flex-1 py-3 bg-primary/20 hover:bg-primary/30 border border-primary/30 rounded-xl font-mono text-xs font-bold text-primary transition-all flex items-center justify-center gap-2 cursor-pointer">
+                      <Image className="w-4 h-4" />
+                      Fond
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            const url = URL.createObjectURL(file);
+                            setCurrentBackdrop({
+                              id: 'custom-import',
+                              title: file.name,
+                              description: 'Image importée',
+                              imageUrl: url,
+                              tags: ['custom'],
+                              likes: 0,
+                              category: 'custom',
+                            });
+                            playDjembeSound(440, 'sine');
+                          }
+                        }}
+                      />
+                    </label>
+                    <label className="flex-1 py-3 bg-tertiary/20 hover:bg-tertiary/30 border border-tertiary/30 rounded-xl font-mono text-xs font-bold text-tertiary transition-all flex items-center justify-center gap-2 cursor-pointer">
+                      <Plus className="w-4 h-4" />
+                      Sticker
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            const url = URL.createObjectURL(file);
+                            const customSticker: StickerItem = {
+                              id: `custom-sticker-${Date.now()}`,
+                              name: file.name.slice(0, 12),
+                              imageUrl: url,
+                              category: 'STICKERS',
+                            };
+                            placeStickerOnCanvas(customSticker);
+                            playDjembeSound(330, 'triangle');
+                          }
+                        }}
+                      />
+                    </label>
+                  </div>
+                </div>
+
                 {/* Background selector tray */}
                 <div className="glass-card p-4 rounded-xl border border-white/5 space-y-3">
                   <span className="font-mono text-xs text-on-surface-variant font-bold uppercase block">Select Base Backdrop</span>
@@ -1356,10 +1432,11 @@ export default function App() {
                     <img src={generatedImage ?? undefined} alt="Meme généré" className="w-full rounded-xl border border-white/10" />
                     <a
                       href={generatedImage ?? undefined}
-                      download="memeafrica-generated.png"
+                      target="_blank"
+                      rel="noopener noreferrer"
                       className="w-full py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl font-mono text-xs font-bold text-on-surface transition-all flex items-center justify-center gap-2"
                     >
-                      <Download className="w-4 h-4" />Télécharger l'image
+                      <Download className="w-4 h-4" />Voir / Télécharger l'image
                     </a>
                   </motion.div>
                 )}
