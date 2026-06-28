@@ -32,7 +32,11 @@ import {
   AlertCircle,
   Image,
   ExternalLink,
-  Send
+  Send,
+  Moon,
+  Sun,
+  History,
+  Type
 } from 'lucide-react';
 
 import { 
@@ -51,9 +55,24 @@ import {
   OTHER_SUGGESTED_MEMES 
 } from './data/assets';
 
+const API_URL = (import.meta as any).env?.VITE_API_URL || '';
+
 export default function App() {
   // Navigation State
-  const [activeTab, setActiveTab] = useState<'feed' | 'analyze' | 'voice' | 'studio' | 'share'>('feed');
+  const [activeTab, setActiveTab] = useState<'feed' | 'analyze' | 'voice' | 'studio' | 'share' | 'history'>('feed');
+
+  // Dark/Light mode
+  const [isDarkMode, setIsDarkMode] = useState<boolean>(true);
+
+  // Historique des memes générés
+  const [memeHistory, setMemeHistory] = useState<Array<{id: string; image: string; caption: string; date: string}>>([]);
+
+  // Texte sur image importée
+  const [overlayText, setOverlayText] = useState<string>('');
+  const [overlayFont, setOverlayFont] = useState<string>('Impact');
+  const [overlaySize, setOverlaySize] = useState<number>(32);
+  const [overlayColor, setOverlayColor] = useState<string>('#ffffff');
+  const [showOverlayEditor, setShowOverlayEditor] = useState<boolean>(false);
 
   // Share & Generate Image states (Membre 6)
   const [generatePrompt, setGeneratePrompt] = useState<string>("");
@@ -116,7 +135,7 @@ export default function App() {
     setGenerateError(null);
     setGeneratedImage(null);
     try {
-      const res = await fetch("/api/generate-image", {
+      const res = await fetch(`${API_URL}/api/generate-image`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ prompt: generatePrompt, style: "cartoon african" }),
@@ -124,6 +143,13 @@ export default function App() {
       const data = await res.json();
       if (data.imageBase64) {
         setGeneratedImage(data.imageBase64);
+        // Ajouter à l'historique
+        setMemeHistory(prev => [{
+          id: Date.now().toString(),
+          image: data.imageBase64,
+          caption: generatePrompt,
+          date: new Date().toLocaleTimeString()
+        }, ...prev.slice(0, 9)]);
         playDjembeSound(440, 'sine');
       } else {
         setGenerateError(data.error || "Erreur inconnue");
@@ -139,7 +165,7 @@ export default function App() {
   const handleGetShareLinks = async () => {
     if (!shareMemeText.trim()) return;
     try {
-      const res = await fetch("/api/share-links", {
+      const res = await fetch(`${API_URL}/api/share-links`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text: shareMemeText, imageUrl: generatedImage || "" }),
@@ -184,14 +210,84 @@ export default function App() {
   const audioChunksRef = useRef<Blob[]>([]);
 
   const startSpeechRecognition = () => {
-    // Utiliser MediaRecorder pour enregistrer l'audio et l'envoyer au backend
+    // Essayer d'abord Web Speech API (fonctionne sur Chrome Android sans backend)
+    const SpeechClass = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    
+    if (SpeechClass) {
+      try {
+        const recognition = new SpeechClass();
+        recognitionRef.current = recognition;
+        recognition.continuous = false;
+        recognition.interimResults = true;
+        recognition.lang = 'fr-FR';
+
+        recognition.onstart = () => {
+          setVoiceStatus("🎙️ Parle maintenant...");
+          playDjembeSound(260, 'sine');
+        };
+
+        recognition.onresult = (e: any) => {
+          let interimTranscript = '';
+          let finalTranscript = '';
+          
+          for (let i = e.resultIndex; i < e.results.length; i++) {
+            const transcript = e.results[i][0].transcript;
+            if (e.results[i].isFinal) {
+              finalTranscript += transcript;
+            } else {
+              interimTranscript += transcript;
+            }
+          }
+          
+          // Afficher en temps réel (interim + final)
+          const displayText = finalTranscript || interimTranscript;
+          if (displayText) {
+            setVoiceText(displayText);
+            setVoiceStatus(`✍️ ${displayText}`);
+          }
+          
+          // Quand c'est final, mettre à jour les captions
+          if (finalTranscript) {
+            setCaptionTop("POV: WHEN THEY SAID");
+            setCaptionBottom(finalTranscript.toUpperCase());
+            playDjembeSound(440, 'sine');
+            setIsRecording(false);
+            setRecordingProgress(0);
+          }
+        };
+
+        recognition.onerror = (e: any) => {
+          if (e.error === 'not-allowed') {
+            setVoiceStatus("❌ Micro bloqué. Autorise le micro dans les paramètres.");
+          } else {
+            setVoiceStatus("⚠️ Erreur micro. Essaie encore !");
+          }
+          setIsRecording(false);
+          setRecordingProgress(0);
+        };
+
+        recognition.onend = () => {
+          if (isRecording) {
+            setIsRecording(false);
+            setRecordingProgress(0);
+          }
+        };
+
+        recognition.start();
+        return;
+      } catch {
+        // Fallback vers MediaRecorder si Web Speech API échoue
+      }
+    }
+
+    // Fallback : MediaRecorder → backend
     navigator.mediaDevices.getUserMedia({ audio: true })
       .then((stream) => {
         audioChunksRef.current = [];
         const mediaRecorder = new MediaRecorder(stream);
         mediaRecorderRef.current = mediaRecorder;
 
-        setVoiceStatus("Enregistrement en cours... 🎙️");
+        setVoiceStatus("🎙️ Enregistrement en cours...");
         playDjembeSound(260, 'sine');
 
         mediaRecorder.ondataavailable = (e) => {
@@ -201,12 +297,12 @@ export default function App() {
         mediaRecorder.onstop = async () => {
           stream.getTracks().forEach(t => t.stop());
           const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-          setVoiceStatus("Analyse IA en cours... 🤖");
+          setVoiceStatus("🤖 Analyse IA en cours...");
 
           try {
             const formData = new FormData();
             formData.append('audio', audioBlob, 'voice.webm');
-            const res = await fetch('/api/voice-to-meme', { method: 'POST', body: formData });
+            const res = await fetch(`${API_URL}/api/voice-to-meme`, { method: 'POST', body: formData });
             const data = await res.json();
 
             if (data.transcription) {
@@ -216,11 +312,11 @@ export default function App() {
               setCaptionBottom(data.captionLine2 || data.transcription.toUpperCase());
               playDjembeSound(440, 'sine');
             } else {
-              setVoiceStatus("Erreur IA. Essaie encore !");
+              setVoiceStatus("⚠️ Erreur IA.");
               generateMockTranscript();
             }
           } catch {
-            setVoiceStatus("Serveur indisponible. Mode offline activé.");
+            setVoiceStatus("📵 Serveur indisponible.");
             generateMockTranscript();
           }
           setIsRecording(false);
@@ -228,16 +324,12 @@ export default function App() {
         };
 
         mediaRecorder.start();
-
-        // Arrêt auto après 8 secondes
         setTimeout(() => {
-          if (mediaRecorder.state === 'recording') {
-            mediaRecorder.stop();
-          }
+          if (mediaRecorder.state === 'recording') mediaRecorder.stop();
         }, 8000);
       })
       .catch(() => {
-        setVoiceStatus("Microphone bloqué. Mode offline activé.");
+        setVoiceStatus("❌ Microphone bloqué.");
         generateMockTranscript();
       });
   };
@@ -280,13 +372,19 @@ export default function App() {
     if (!isRecording) {
       setIsRecording(true);
       setVoiceText("");
+      setVoiceStatus("🎙️ Initialisation...");
       startSpeechRecognition();
     } else {
-      // Arrêter l'enregistrement manuellement
+      // Stopper Web Speech API
+      if (recognitionRef.current) {
+        recognitionRef.current.stop();
+      }
+      // Stopper MediaRecorder
       if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
         mediaRecorderRef.current.stop();
       }
       setIsRecording(false);
+      setVoiceStatus("Click to start recording...");
     }
   };
 
@@ -298,7 +396,7 @@ export default function App() {
     playDjembeSound(180, 'sawtooth');
 
     try {
-      const response = await fetch("/api/analyze-context", {
+      const response = await fetch(`${API_URL}/api/analyze-context`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text: pastedContextText })
@@ -327,7 +425,7 @@ export default function App() {
     playDjembeSound(220, 'triangle');
 
     try {
-      const response = await fetch("/api/generate-meme", {
+      const response = await fetch(`${API_URL}/api/generate-meme`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ prompt: remixPromptText })
@@ -489,31 +587,220 @@ export default function App() {
     playDjembeSound(400, 'sine');
   };
 
-  // Export du meme → capture canvas → onglet Share
+  // Capture le canvas en dessinant chaque élément manuellement (CORS-safe)
+  const captureCanvas = (): Promise<string | null> => {
+    return new Promise((resolve) => {
+      if (!canvasRef.current) { resolve(null); return; }
+
+      const container = canvasRef.current;
+      const rect = container.getBoundingClientRect();
+      const W = rect.width || 400;
+      const H = rect.height || 400;
+      const SCALE = 2;
+
+      const outputCanvas = document.createElement('canvas');
+      outputCanvas.width = W * SCALE;
+      outputCanvas.height = H * SCALE;
+      const ctx = outputCanvas.getContext('2d');
+      if (!ctx) { resolve(null); return; }
+      ctx.scale(SCALE, SCALE);
+
+      // 1. Dessiner le backdrop
+      const backdropImg = new window.Image();
+      backdropImg.crossOrigin = 'anonymous';
+
+      const drawEverythingElse = () => {
+        // 2. Dessiner les stickers placés
+        let stickerPromises = placedStickers.map(sticker => {
+          return new Promise<void>((res) => {
+            const sImg = new window.Image();
+            sImg.crossOrigin = 'anonymous';
+            sImg.onload = () => {
+              ctx.save();
+              const px = (sticker.x / 100) * W;
+              const py = (sticker.y / 100) * H;
+              const sw = 80 * sticker.scale;
+              const sh = 80 * sticker.scale;
+              ctx.translate(px, py);
+              ctx.rotate((sticker.rotation * Math.PI) / 180);
+              ctx.drawImage(sImg, -sw / 2, -sh / 2, sw, sh);
+              ctx.restore();
+              res();
+            };
+            sImg.onerror = () => res();
+            sImg.src = sticker.imageUrl;
+          });
+        });
+
+        Promise.all(stickerPromises).then(() => {
+          // 3. Dessiner captionTop
+          if (captionTop) {
+            ctx.save();
+            ctx.font = `bold ${captionSize}px Impact, Arial`;
+            ctx.fillStyle = '#ffffff';
+            ctx.strokeStyle = '#000000';
+            ctx.lineWidth = 3;
+            ctx.textAlign = 'center';
+            ctx.strokeText(captionTop, W / 2, captionSize + 10);
+            ctx.fillText(captionTop, W / 2, captionSize + 10);
+            ctx.restore();
+          }
+
+          // 4. Dessiner captionBottom
+          if (captionBottom) {
+            ctx.save();
+            ctx.font = `bold ${captionSize + 4}px Impact, Arial`;
+            ctx.fillStyle = '#ffffff';
+            ctx.strokeStyle = '#000000';
+            ctx.lineWidth = 3;
+            ctx.textAlign = 'center';
+            ctx.strokeText(captionBottom, W / 2, H - 20);
+            ctx.fillText(captionBottom, W / 2, H - 20);
+            ctx.restore();
+          }
+
+          // 5. Dessiner overlayText personnalisé
+          if (overlayText) {
+            ctx.save();
+            ctx.font = `${overlaySize}px ${overlayFont}`;
+            ctx.fillStyle = overlayColor;
+            ctx.strokeStyle = '#000000';
+            ctx.lineWidth = 2;
+            ctx.textAlign = 'center';
+            ctx.strokeText(overlayText, W / 2, H - 70);
+            ctx.fillText(overlayText, W / 2, H - 70);
+            ctx.restore();
+          }
+
+          resolve(outputCanvas.toDataURL('image/png'));
+        });
+      };
+
+      backdropImg.onload = () => {
+        ctx.drawImage(backdropImg, 0, 0, W, H);
+        drawEverythingElse();
+      };
+      backdropImg.onerror = () => {
+        // Si le backdrop ne charge pas, fond noir
+        ctx.fillStyle = '#1a1a2e';
+        ctx.fillRect(0, 0, W, H);
+        drawEverythingElse();
+      };
+      backdropImg.src = currentBackdrop.imageUrl;
+    });
+  };
+
+  // Export → partager le sticker dans Share
   const simulateMemeExport = async () => {
     playDjembeSound(480, 'sine');
-    try {
-      const html2canvasModule = await import('html2canvas' as any);
-      const html2canvas = html2canvasModule.default || html2canvasModule;
-      if (canvasRef.current) {
-        const canvas = await html2canvas(canvasRef.current, { useCORS: true, allowTaint: true });
-        const imageDataUrl = canvas.toDataURL('image/png');
-        setGeneratedImage(imageDataUrl);
-        setShareMemeText(`${captionTop} ${captionBottom} #MemeAfrica`);
-        setActiveTab('share');
-        playDjembeSound(440, 'sine');
-      }
-    } catch {
-      // Fallback — rediriger vers Share avec le backdrop actuel
-      setGeneratedImage(currentBackdrop.imageUrl);
-      setShareMemeText(`${captionTop} ${captionBottom} #MemeAfrica`);
-      setActiveTab('share');
-      playDjembeSound(330, 'triangle');
-    }
+    const imageDataUrl = await captureCanvas();
+    const finalImage = imageDataUrl || currentBackdrop.imageUrl;
+    setGeneratedImage(finalImage);
+    setShareMemeText(`${captionTop} ${captionBottom} #MemeAfrica`);
+    // Ajouter à l'historique
+    setMemeHistory(prev => [{
+      id: Date.now().toString(),
+      image: finalImage,
+      caption: `${captionTop} ${captionBottom}`,
+      date: new Date().toLocaleTimeString()
+    }, ...prev.slice(0, 9)]);
+    setActiveTab('share');
+    playDjembeSound(440, 'sine');
+  };
+
+  // Créer Sticker → sauvegarder dans galerie + mettre à jour historique
+  const createSticker = async () => {
+    playDjembeSound(300, 'triangle');
+    setStudioStatusMessage('⏳ Création du sticker...');
+    
+    const stickerDate = new Date().toLocaleTimeString();
+    const stickerCaption = `${captionTop} ${captionBottom}`.trim() || 'Mon Sticker';
+    const stickerId = Date.now().toString();
+
+    const imageDataUrl = await captureCanvas();
+    const finalDataUrl = imageDataUrl || currentBackdrop.imageUrl;
+
+    // Créer un canvas carré 512x512
+    const img = new window.Image();
+    img.crossOrigin = 'anonymous';
+    
+    const processSave = (dataUrl: string) => {
+      const img2 = new window.Image();
+      img2.onload = async () => {
+        const stickerCanvas = document.createElement('canvas');
+        stickerCanvas.width = 512;
+        stickerCanvas.height = 512;
+        const ctx = stickerCanvas.getContext('2d');
+        if (ctx) {
+          const minDim = Math.min(img2.width, img2.height);
+          const sx = (img2.width - minDim) / 2;
+          const sy = (img2.height - minDim) / 2;
+          ctx.drawImage(img2, sx, sy, minDim, minDim, 0, 0, 512, 512);
+          const stickerDataUrl = stickerCanvas.toDataURL('image/png');
+
+          // Sauvegarder avec Capacitor si disponible (APK)
+          try {
+            const { Filesystem, Directory } = await import('@capacitor/filesystem');
+            const { Share } = await import('@capacitor/share');
+            const base64Data = stickerDataUrl.split(',')[1];
+            const fileName = `sticker-memeafrica-${stickerId}.png`;
+            
+            await Filesystem.writeFile({
+              path: fileName,
+              data: base64Data,
+              directory: Directory.Documents,
+            });
+
+            // Partager vers les apps (ouvre le menu natif Android)
+            await Share.share({
+              title: 'Mon Sticker MemeAfrica',
+              text: stickerCaption,
+              url: `file://${fileName}`,
+              dialogTitle: 'Partager le sticker',
+            });
+
+          } catch {
+            // Fallback navigateur web : téléchargement direct
+            const link = document.createElement('a');
+            link.download = `sticker-memeafrica-${stickerId}.png`;
+            link.href = stickerDataUrl;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+          }
+
+          // Mettre à jour l'historique
+          setMemeHistory(prev => [{
+            id: stickerId,
+            image: stickerDataUrl,
+            caption: `🎭 ${stickerCaption}`,
+            date: stickerDate
+          }, ...prev.slice(0, 9)]);
+
+          setStudioStatusMessage('✅ Sticker sauvegardé dans la galerie !');
+          playDjembeSound(440, 'sine');
+          setTimeout(() => setStudioStatusMessage('Studio prêt'), 3000);
+        }
+      };
+      img2.onerror = () => {
+        // Si l'image ne charge pas, utiliser directement le backdrop
+        const link = document.createElement('a');
+        link.download = `sticker-memeafrica-${stickerId}.png`;
+        link.href = currentBackdrop.imageUrl;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        setStudioStatusMessage('✅ Sticker téléchargé !');
+        setTimeout(() => setStudioStatusMessage('Studio prêt'), 3000);
+      };
+      img2.src = dataUrl;
+    };
+
+    processSave(finalDataUrl);
   };
 
   return (
-    <div id="memeafrica-app" className="kente-pattern min-h-screen text-on-surface select-none relative pb-28 md:pb-20 overflow-x-hidden">
+    <div id="memeafrica-app" className={`kente-pattern min-h-screen select-none relative pb-28 md:pb-20 overflow-x-hidden ${isDarkMode ? 'text-on-surface' : 'bg-gray-100 text-gray-900'}`}>
       
       {/* HEADER SECTION */}
       <header className="flex justify-between items-center px-4 md:px-12 h-16 w-full fixed top-0 z-50 bg-surface/30 backdrop-blur-xl border-b border-tertiary/20">
@@ -541,6 +828,13 @@ export default function App() {
             {isAudioMuted ? <VolumeX className="w-5 h-5 text-error" /> : <Volume2 className="w-5 h-5 text-tertiary" />}
           </button>
           
+          <button 
+            onClick={() => setIsDarkMode(!isDarkMode)}
+            className="p-2 rounded-full hover:bg-white/5 text-on-surface-variant transition-colors"
+            title={isDarkMode ? "Mode Clair" : "Mode Sombre"}
+          >
+            {isDarkMode ? <Sun className="w-5 h-5 text-yellow-400" /> : <Moon className="w-5 h-5 text-blue-400" />}
+          </button>
           <button className="p-2 rounded-full hover:bg-white/5 text-on-surface-variant transition-colors">
             <Search className="w-5 h-5 text-on-surface" />
           </button>
@@ -1054,14 +1348,23 @@ export default function App() {
                     <span className="font-mono text-xs text-on-surface-variant">{studioStatusMessage}</span>
                   </div>
                   
-                  {/* Floating Export */}
-                  <button 
-                    onClick={simulateMemeExport}
-                    className="px-5 py-2 bg-tertiary text-black font-mono text-xs font-bold uppercase rounded-full hover:brightness-110 transition-all flex items-center gap-1.5"
-                  >
-                    <Download className="w-3.5 h-3.5" />
-                    <span>Export</span>
-                  </button>
+                  {/* Floating Export + Créer Sticker */}
+                  <div className="flex items-center gap-2">
+                    <button 
+                      onClick={createSticker}
+                      className="px-4 py-2 bg-primary/20 border border-primary/40 text-primary font-mono text-xs font-bold uppercase rounded-full hover:brightness-110 transition-all flex items-center gap-1.5"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Sticker</span>
+                    </button>
+                    <button 
+                      onClick={simulateMemeExport}
+                      className="px-5 py-2 bg-tertiary text-black font-mono text-xs font-bold uppercase rounded-full hover:brightness-110 transition-all flex items-center gap-1.5"
+                    >
+                      <Share2 className="w-3.5 h-3.5" />
+                      <span>Export</span>
+                    </button>
+                  </div>
                 </div>
 
                 {/* THE CORE CANVAS INTERACTIVE ELEMENT */}
@@ -1113,6 +1416,23 @@ export default function App() {
                       >
                         {captionBottom}
                       </h2>
+                    </div>
+                  )}
+
+                  {/* TEXTE OVERLAY PERSONNALISÉ */}
+                  {overlayText && (
+                    <div className="absolute bottom-20 left-0 right-0 px-4 text-center z-25 pointer-events-none">
+                      <p
+                        style={{
+                          fontFamily: overlayFont,
+                          fontSize: `${overlaySize}px`,
+                          color: overlayColor,
+                          textShadow: '2px 2px 4px rgba(0,0,0,0.9), -1px -1px 3px rgba(0,0,0,0.9)',
+                          lineHeight: 1.2,
+                        }}
+                      >
+                        {overlayText}
+                      </p>
                     </div>
                   )}
 
@@ -1354,6 +1674,55 @@ export default function App() {
                       />
                     </label>
                   </div>
+
+                  {/* Éditeur de texte sur image */}
+                  <div className="space-y-2">
+                    <button
+                      onClick={() => setShowOverlayEditor(!showOverlayEditor)}
+                      className="w-full py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl font-mono text-xs font-bold text-on-surface transition-all flex items-center justify-center gap-2"
+                    >
+                      <Type className="w-4 h-4" />
+                      {showOverlayEditor ? 'Masquer éditeur texte' : 'Ajouter texte sur image'}
+                    </button>
+
+                    {showOverlayEditor && (
+                      <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="space-y-2 p-3 bg-black/20 rounded-xl border border-white/5">
+                        <input
+                          type="text"
+                          value={overlayText}
+                          onChange={(e) => setOverlayText(e.target.value)}
+                          placeholder="Ton texte ici..."
+                          className="w-full bg-black/40 border border-white/10 rounded-lg p-2 text-sm font-mono focus:outline-none"
+                        />
+                        <div className="flex gap-2">
+                          <select
+                            value={overlayFont}
+                            onChange={(e) => setOverlayFont(e.target.value)}
+                            className="flex-1 bg-black/40 border border-white/10 rounded-lg p-2 text-xs font-mono focus:outline-none"
+                          >
+                            <option value="Impact">Impact</option>
+                            <option value="Arial">Arial</option>
+                            <option value="Comic Sans MS">Comic Sans</option>
+                            <option value="Georgia">Georgia</option>
+                            <option value="Courier New">Courier</option>
+                          </select>
+                          <input
+                            type="number"
+                            value={overlaySize}
+                            onChange={(e) => setOverlaySize(Number(e.target.value))}
+                            min={12} max={80}
+                            className="w-16 bg-black/40 border border-white/10 rounded-lg p-2 text-xs font-mono focus:outline-none"
+                          />
+                          <input
+                            type="color"
+                            value={overlayColor}
+                            onChange={(e) => setOverlayColor(e.target.value)}
+                            className="w-10 h-9 bg-black/40 border border-white/10 rounded-lg cursor-pointer"
+                          />
+                        </div>
+                      </motion.div>
+                    )}
+                  </div>
                 </div>
 
                 {/* Background selector tray */}
@@ -1455,6 +1824,13 @@ export default function App() {
                     >
                       <Download className="w-4 h-4" />Voir / Télécharger l'image
                     </a>
+                    <a
+                      href={generatedImage ?? undefined}
+                      download="memeafrica.png"
+                      className="w-full py-2 bg-green-500/10 hover:bg-green-500/20 border border-green-500/20 rounded-xl font-mono text-xs font-bold text-green-400 transition-all flex items-center justify-center gap-2"
+                    >
+                      <Download className="w-4 h-4" />💾 Sauvegarder dans la galerie
+                    </a>
                   </motion.div>
                 )}
               </div>
@@ -1516,11 +1892,65 @@ export default function App() {
             </motion.div>
           )}
 
+          {/* ===== HISTORY TAB ===== */}
+          {activeTab === 'history' && (
+            <motion.div
+              key="history"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              className="p-4 space-y-4 pb-24"
+            >
+              <div className="space-y-1 pt-2">
+                <h2 className="font-mono font-bold text-lg text-on-surface">📜 Historique</h2>
+                <p className="text-xs text-on-surface-variant font-mono">Tes derniers memes générés</p>
+              </div>
+              {memeHistory.length === 0 ? (
+                <div className="glass-card p-8 rounded-xl border border-white/5 text-center">
+                  <History className="w-12 h-12 text-on-surface-variant mx-auto mb-3 opacity-40" />
+                  <p className="font-mono text-sm text-on-surface-variant">Aucun meme généré pour l'instant</p>
+                  <p className="font-mono text-xs text-on-surface-variant/60 mt-1">Génère un meme dans l'onglet Share !</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {memeHistory.map((item) => (
+                    <div key={item.id} className="glass-card rounded-xl border border-white/5 overflow-hidden">
+                      <img src={item.image} alt={item.caption} className="w-full h-48 object-cover" />
+                      <div className="p-3 space-y-2">
+                        <p className="font-mono text-xs text-on-surface">{item.caption}</p>
+                        <p className="font-mono text-[10px] text-on-surface-variant">{item.date}</p>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => {
+                              setGeneratedImage(item.image);
+                              setShareMemeText(item.caption + ' #MemeAfrica');
+                              setActiveTab('share');
+                            }}
+                            className="flex-1 py-2 bg-tertiary/20 border border-tertiary/30 rounded-lg font-mono text-xs text-tertiary flex items-center justify-center gap-1"
+                          >
+                            <Share2 className="w-3 h-3" />Partager
+                          </button>
+                          <a
+                            href={item.image}
+                            download={`meme-${item.id}.png`}
+                            className="flex-1 py-2 bg-white/5 border border-white/10 rounded-lg font-mono text-xs text-on-surface flex items-center justify-center gap-1"
+                          >
+                            <Download className="w-3 h-3" />Sauvegarder
+                          </a>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </motion.div>
+          )}
+
         </AnimatePresence>
       </main>
 
       {/* FIXED BOTTOM NAV BAR TAB SELECTION */}
-      <nav className="fixed bottom-0 w-full h-20 z-50 flex justify-around items-center px-4 pb-2 bg-surface/20 backdrop-blur-md border-t border-tertiary/20">
+      <nav className="fixed bottom-0 w-full h-20 z-50 flex justify-around items-center px-2 pb-2 bg-surface/20 backdrop-blur-md border-t border-tertiary/20">
         <button 
           id="nav-tab-feed"
           onClick={() => {
@@ -1529,8 +1959,8 @@ export default function App() {
           }}
           className={`flex flex-col items-center justify-center transition-all ${activeTab === 'feed' ? 'text-tertiary font-bold scale-105' : 'text-on-surface-variant hover:text-tertiary'}`}
         >
-          <Grid3x3 className="w-5 h-5 mb-1" />
-          <span className="font-mono text-[10px] uppercase tracking-wider">Feed</span>
+          <Grid3x3 className="w-4 h-4 mb-1" />
+          <span className="font-mono text-[9px] uppercase tracking-wider">Feed</span>
         </button>
 
         <button 
@@ -1541,8 +1971,8 @@ export default function App() {
           }}
           className={`flex flex-col items-center justify-center transition-all ${activeTab === 'analyze' ? 'text-tertiary font-bold scale-105' : 'text-on-surface-variant hover:text-tertiary'}`}
         >
-          <Brain className="w-5 h-5 mb-1" />
-          <span className="font-mono text-[10px] uppercase tracking-wider">Analyze</span>
+          <Brain className="w-4 h-4 mb-1" />
+          <span className="font-mono text-[9px] uppercase tracking-wider">Analyze</span>
         </button>
 
         <button 
@@ -1553,8 +1983,8 @@ export default function App() {
           }}
           className={`flex flex-col items-center justify-center transition-all ${activeTab === 'voice' ? 'text-tertiary font-bold scale-105' : 'text-on-surface-variant hover:text-tertiary'}`}
         >
-          <Mic2 className="w-5 h-5 mb-1" />
-          <span className="font-mono text-[10px] uppercase tracking-wider">Voice</span>
+          <Mic2 className="w-4 h-4 mb-1" />
+          <span className="font-mono text-[9px] uppercase tracking-wider">Voice</span>
         </button>
 
         <button 
@@ -1565,8 +1995,8 @@ export default function App() {
           }}
           className={`flex flex-col items-center justify-center transition-all ${activeTab === 'studio' ? 'text-tertiary font-bold scale-105' : 'text-on-surface-variant hover:text-tertiary'}`}
         >
-          <Sparkles className="w-5 h-5 mb-1" />
-          <span className="font-mono text-[10px] uppercase tracking-wider">Studio</span>
+          <Sparkles className="w-4 h-4 mb-1" />
+          <span className="font-mono text-[9px] uppercase tracking-wider">Studio</span>
         </button>
 
         <button
@@ -1577,8 +2007,20 @@ export default function App() {
           }}
           className={`flex flex-col items-center justify-center transition-all ${activeTab === 'share' ? 'text-tertiary font-bold scale-105' : 'text-on-surface-variant hover:text-tertiary'}`}
         >
-          <Share2 className="w-5 h-5 mb-1" />
-          <span className="font-mono text-[10px] uppercase tracking-wider">Share</span>
+          <Share2 className="w-4 h-4 mb-1" />
+          <span className="font-mono text-[9px] uppercase tracking-wider">Share</span>
+        </button>
+
+        <button
+          id="nav-tab-history"
+          onClick={() => {
+            setActiveTab('history');
+            playDjembeSound(300, 'triangle');
+          }}
+          className={`flex flex-col items-center justify-center transition-all ${activeTab === 'history' ? 'text-tertiary font-bold scale-105' : 'text-on-surface-variant hover:text-tertiary'}`}
+        >
+          <History className="w-4 h-4 mb-1" />
+          <span className="font-mono text-[9px] uppercase tracking-wider">History</span>
         </button>
       </nav>
 
